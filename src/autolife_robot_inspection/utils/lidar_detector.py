@@ -5,7 +5,7 @@ import re
 import sys
 import time
 import traceback
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, redirect_stderr
 
 # Add parent directory to sys.path for module resolution
 sys.path.append(

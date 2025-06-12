@@ -21,6 +21,12 @@ with redirect_stdout(io.StringIO()):
         CameraDetector = None
 
     try:
+        from .lidar_detector import LidarDetector
+    except ImportError:
+        print("Failed to import LidarDetector. Make sure you have the required dependencies installed.")
+        LidarDetector = None
+
+    try:
         from .imu_detector import ImuDetector
     except ImportError:
         print("Failed to import ImuDetector. Make sure you have the required dependencies installed.")
