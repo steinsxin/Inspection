@@ -6,80 +6,59 @@ on:
 
 jobs:
   build-for-jetson:
+    if: github.event_name == 'push'
     runs-on: [ARM64]
-    timeout-minutes: 30
 
     container: nvcr.io/nvidia/l4t-jetpack:r36.3.0
 
     env:
+      # Set this to true when using container, false when using self-hosted runner directly
       USE_CONTAINER: true
 
     steps:
-      - name: Check container environment
+      # Only execute these steps when using a container
+      - name: Install core system dependencies
+        if: env.USE_CONTAINER == 'true'
         run: |
-          echo "[INFO] Container is running"
-          uname -a
-          whoami
-          echo "[INFO] Python path: $(which python3)"
-          echo "[INFO] Network test:"
-          ping -c 3 baidu.com || echo "[WARN] Network not available"
+          apt update
+          apt install -y git git-lfs curl wget make cmake build-essential swig python3-dev python3-pip tabulate nmap
 
-      - name: Install system dependencies
-        run: |
-          echo "[INFO] Updating APT"
-          apt update || { echo "[ERROR] apt update failed"; exit 1; }
+      # - name: Install other system dependencies
+      #   if: env.USE_CONTAINER == 'true'
+      #   run: |
+      #     apt update
+      #     apt install -y \
+      #       tabulate \
 
-          echo "[INFO] Installing dependencies"
-          apt install -y git git-lfs curl wget make cmake \
-            build-essential swig python3-dev python3-pip \
-            tabulate nmap || { echo "[ERROR] apt install failed"; exit 1; }
-
-          echo "[INFO] Dependencies installed"
-
-      - name: Ensure python symlink
+      - name: Create python symlink
+        if: env.USE_CONTAINER == 'true'
         run: |
           ln -sf /usr/bin/python3 /usr/bin/python
-          python --version
-          which python
 
+      # Steps that run regardless of container usage
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check Python configuration
+      - name: Check Python version
         run: |
-          echo "[INFO] Python version info:"
           python --version
-          echo "[INFO] Python location:"
           which python
-          python -c "import sys; print('[INFO] sys.executable =', sys.executable)"
-          python -c "import sysconfig; print('[INFO] include path =', sysconfig.get_path('include'))"
+          python -c "import sys; print(sys.executable)"
+          python -c "import sysconfig; print('Include path:', sysconfig.get_path('include'))"
 
-      - name: Install Python build tools
+      - name: Install python build dependencies
         run: |
-          echo "[INFO] Installing pip packages"
-          python -m pip install --upgrade pip
-          python -m pip install wheel Cython || { echo "[ERROR] pip install failed"; exit 1; }
+          python -m pip install wheel Cython
 
-      - name: Build wheel package with heartbeat
+      - name: Compile and build wheel
         env:
+          # Pass the run number as an environment variable
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          echo "[INFO] Starting build"
+          python cythonizer.py -s src
+          python setup.py bdist_wheel
 
-          # Background heartbeat
-          (while true; do echo "[HEARTBEAT] build still running..."; sleep 60; done) &
-          HEARTBEAT_PID=$!
-
-          echo "[INFO] Running cythonizer"
-          python cythonizer.py -s src || { echo "[ERROR] cythonizer failed"; kill $HEARTBEAT_PID; exit 1; }
-
-          echo "[INFO] Running setup.py bdist_wheel"
-          python setup.py bdist_wheel || { echo "[ERROR] wheel build failed"; kill $HEARTBEAT_PID; exit 1; }
-
-          echo "[INFO] Wheel build complete"
-          kill $HEARTBEAT_PID
-
-      - name: Upload built wheel
+      - name: Archive production artifacts
         uses: actions/upload-artifact@v4
         with:
           name: autolife_robot_inspection-wheel
