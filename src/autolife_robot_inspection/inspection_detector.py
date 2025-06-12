@@ -14,7 +14,7 @@ from datetime import datetime
 
 from autolife_robot_inspection.utils import (
     AudioDetector, BatteryDetector, MotorDetector, CameraDetector, LidarDetector,
-    ImuDetector, HardwareDetector, InternalDetector, WifiDetector
+    IMUDetector, HardwareDetector, InternalDetector, WifiDetector
 )
 from autolife_robot_inspection import MODEL_CONFIG_PATH, MENU_CONFIG_PATH, FUNC_CONFIG_PATH
 

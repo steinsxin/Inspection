@@ -27,10 +27,10 @@ with redirect_stdout(io.StringIO()):
         LidarDetector = None
 
     try:
-        from .imu_detector import ImuDetector
+        from .imu_detector import IMUDetector
     except ImportError:
-        print("Failed to import ImuDetector. Make sure you have the required dependencies installed.")
-        ImuDetector = None
+        print("Failed to import IMUDetector. Make sure you have the required dependencies installed.")
+        IMUDetector = None
         
     try:
         from .battery_detector import BatteryDetector
