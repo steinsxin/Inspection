@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+build/
+install/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.ipynb_checkpoints
+.python-version
+*.pkl
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+
+# Log files
+*.log
+logs/
+log/
+
+# Binary data and large files
+*.model
+*.weights
+*.bin
+*.onnx
+*.pth
+*.pt
+*.h5
+*.pb
+*.tflite
+*.so
+
+# System specific
+.directory
+Thumbs.DS
+settings.toml

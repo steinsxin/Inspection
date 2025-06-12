@@ -1,0 +1,15 @@
+[Unit]
+Description=Main Inspection Service
+After=network.target
+
+[Service]
+TimeoutStopSec=1s
+Type=simple
+ExecStart=chrt -r 99 %h/miniconda3/bin/conda run --no-capture-output -n ros2 python -m autolife_robot_inspection.main
+Restart=always
+RestartSec=3
+Environment="PYTHONUNBUFFERED=1"
+Environment="ROS_DOMAIN_ID=100"
+
+[Install]
+WantedBy=default.target

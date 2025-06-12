@@ -1,0 +1,50 @@
+{
+  "Jetson NX": {
+    "options": {
+      "en": [
+        "1. Visual module test",
+        "2. Audio module test"
+      ],
+      "zh": [
+        "1. 视觉模块测试",
+        "2. 音频模块测试"
+      ]
+    },
+    "actions": {
+      "1": {"function": "visual_module_detection"},
+      "2": {"function": "audio_module_detection"}
+    }
+  },
+  "Jetson NANO": {
+    "options": {
+      "en": [
+        "1. Motor module test"
+      ],
+      "zh": [
+        "1. 电机模块测试"
+      ]
+    },
+    "actions": {
+      "1": {"function": "motor_module_detection"}
+    }
+  },
+  "Orangepi": {
+    "options": {
+      "en": [
+        "1. Lidar module test",
+        "2. Battery module test",
+        "3. IMU module test"
+      ],
+      "zh": [
+        "1. 雷达模块测试",
+        "2. 电池模块测试",
+        "3. 陀螺仪模块测试"
+      ]
+    },
+    "actions": {
+      "1": {"function": "lidar_module_detection"},
+      "2": {"function": "battery_module_detection"},
+      "3": {"function": "imu_module_detection"}
+    }
+  }
+}

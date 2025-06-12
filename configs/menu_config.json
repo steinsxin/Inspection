@@ -1,0 +1,86 @@
+{
+  "en": {
+    "title": "Autolife Robot",
+    "hostname": "Hostname",
+    "device": "Jetson Device",
+    "quit": "Press 'q' to quit",
+    "language": "Press 'w' to switch language",
+    "back": "Press 'b' to go back",
+    "running": "Running...",
+    "completed": "Completed.",
+    "exiting": "Exiting...",
+    "language_switched": "Language switched to Chinese",
+    "options": {
+      "Jetson": [
+        "1. Hardware Information",
+        "2. Module test",
+        "3. Integration test",
+        "4. Network connectivity test",
+        "5. Other Functions"
+      ],
+      "Hardwareinfo": [
+        "1. Hardware Info"
+      ],
+      "IntegrationTest": [
+        "1. Full Vehicle test",
+        "2. Face Detection"
+      ],
+      "NetworkTest": [
+        "1. Internal network test",
+        "2. WIFI test"
+      ]
+    }
+  },
+  "zh": {
+    "title": "Autolife Robot",
+    "hostname": "主机名",
+    "device": "Jetson设备",
+    "quit": "按'q'键退出",
+    "language": "按'w'键切换语言",
+    "back": "按'b'键返回上一级",
+    "running": "运行中...",
+    "completed": "完成",
+    "exiting": "退出中",
+    "language_switched": "已切换至中文",
+    "options": {
+      "Jetson": [
+        "1. 开发板硬件信息",
+        "2. 模块测试",
+        "3. 集成测试",
+        "4. 网络连通测试",
+        "5. 其他功能"
+      ],
+      "Hardwareinfo": [
+        "1. 硬件信息"
+      ],
+      "IntegrationTest": [
+        "1. 整车测试",
+        "2. 人脸检测"
+      ],
+      "NetworkTest": [
+        "1. 内网测试",
+        "2. WIFI测试"
+      ]
+    }
+  },
+  "actions": {
+    "Jetson": {
+      "1": {"menu": "Hardwareinfo"},
+      "2": {"menu": "ModuleTest"},
+      "3": {"menu": "IntegrationTest"},
+      "4": {"menu": "NetworkTest"},
+      "5": {"menu": "OtherFunctions"}
+    },
+    "Hardwareinfo": {
+      "1": {"function": "hardware_info"}
+    },
+    "IntegrationTest": {
+      "1": {"function": "full_vehicle_test"},
+      "2": {"function": "face_detection_test"}
+    },
+    "NetworkTest": {
+      "1": {"function": "internal_network_test"},
+      "2": {"function": "wifi_test"}
+    }
+  }
+}
