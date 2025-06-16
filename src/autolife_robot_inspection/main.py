@@ -27,6 +27,13 @@ class InspectionUI:
             logging.error(f"Failed to load config '{MENU_CONFIG_PATH}': {e}")
             raise
 
+        try:
+            with open(FUNC_CONFIG_PATH, 'r', encoding='utf-8') as f:
+                self.func_config = json.load(f)
+        except Exception as e:
+            logging.error(f"Failed to load config '{FUNC_CONFIG_PATH}': {e}")
+            raise
+
         self.hostname = socket.gethostname()
         self.device_type = self._detect_device_type()
         self.detector = InspectionDetector(language)
@@ -89,6 +96,7 @@ class InspectionUI:
                         self.display_ui()
                     elif 'function' in action:
                         func = getattr(self.detector, action['function'], None)
+                        print(func)
                         if callable(func):
                             option_text = self.text['options'][int(key) - 1].split('. ')[1]
                             print(f"\n{option_text}: {self.text['running']}")
@@ -107,8 +115,7 @@ class InspectionUI:
         text = self.menu_config[self.language].copy()
 
         if self.current_menu == 'ModuleTest':
-            device_config = self.menu_config.get('device_config', {})
-            device_info = device_config.get(self.device_type, {})
+            device_info = self.func_config.get(self.device_type, {})
             options = device_info.get('options', {}).get(self.language, [])
         else:
             options = self.menu_config[self.language]['options'].get(self.current_menu, [])
@@ -119,8 +126,8 @@ class InspectionUI:
     def _get_current_actions(self):
         """Return key-action mappings based on current menu and device."""
         if self.current_menu == 'ModuleTest':
-            device_config = self.menu_config.get('device_config', {})
-            return device_config.get(self.device_type, {}).get('actions', {})
+            device_info = self.func_config.get(self.device_type, {})
+            return device_info.get('actions', {})
         return self.menu_config['actions'].get(self.current_menu, {})
 
     def _detect_device_type(self):

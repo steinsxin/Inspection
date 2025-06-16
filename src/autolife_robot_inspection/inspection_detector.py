@@ -12,7 +12,7 @@ import tty
 import traceback
 from datetime import datetime
 
-from autolife_robot_inspection.utils import (
+from autolife_robot_inspection.ModuleTest import (
     AudioDetector, BatteryDetector, MotorDetector, CameraDetector, LidarDetector,
     IMUDetector, HardwareDetector, InternalDetector, WifiDetector
 )
@@ -74,7 +74,7 @@ class InspectionDetector:
                 if refresh_log and 'log' in shared_log:
                     sys.stdout = self.original_stdout
                     sys.stderr = self.original_stderr
-                    os.system('cls' if os.name != 'nt' else 'clear')
+                    os.system('cls' if os.name == 'nt' else 'clear')
                     print("Press any key to stop loopback...")
                     print(shared_log['log'])
                     time.sleep(0.1)
