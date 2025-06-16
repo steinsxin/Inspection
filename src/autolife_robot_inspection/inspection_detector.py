@@ -10,6 +10,7 @@ import termios
 import time
 import tty
 import traceback
+import threading
 from datetime import datetime
 
 from autolife_robot_inspection.ModuleTest import (
@@ -179,29 +180,31 @@ class InspectionDetector:
     def other_functions_menu(self):
         print("Other Functions: Coming soon...")
 
-    def full_vehicle_test(self):
+    def AutolifeTest(self):
         os.system('cls' if os.name == 'nt' else 'clear')
         print("Press Ctrl+C to exit...\n")
+                
+        def run_script():
+            root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            script_path = os.path.join(root_dir, "autolife_robot_inspection", "IntegrationTest", "AutolifeTest", "main.py")
+            print(f"[INFO] Running: {script_path}")
 
-        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script_path = os.path.join(root_dir, "component", "AutolifeTest", "main.py")
-        print(f"[INFO] Running: {script_path}")
+            # 动态导入目标脚本
+            sys.path.append(os.path.dirname(script_path))
+            from IntegrationTest.AutolifeTest.main import main
+            main()
 
         try:
-            process = subprocess.Popen(
-                [sys.executable, script_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                bufsize=1,
-                universal_newlines=True
-            )
-            for line in process.stdout:
-                print(line, end='')
-            process.wait()
-            print(f"[INFO] Integration test finished with return code: {process.returncode}")
+            # 创建线程运行目标脚本
+            thread = threading.Thread(target=run_script)
+            thread.start()
+
+            # 主线程继续运行，等待线程结束
+            thread.join()
+            print("[INFO] Integration test finished.")
         except Exception as e:
             print(f"[ERROR] Failed to run integration test: {e}")
 
-    def face_detection_test(self):
+    def Welcome_guests(self):
         time.sleep(1)
         print("face_detection_test")
