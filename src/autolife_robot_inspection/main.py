@@ -119,7 +119,7 @@ class InspectionUI:
             options = device_info.get('options', {}).get(self.language, [])
         else:
             options = self.menu_config[self.language]['options'].get(self.current_menu, [])
-
+        
         text['options'] = options
         return text
 

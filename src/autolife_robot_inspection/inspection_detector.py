@@ -18,6 +18,9 @@ from autolife_robot_inspection.ModuleTest import (
     AudioDetector, BatteryDetector, MotorDetector, CameraDetector, LidarDetector,
     IMUDetector, HardwareDetector, InternalDetector, WifiDetector
 )
+from autolife_robot_inspection.OtherFunc import (
+    RemoteScriptManager
+)
 from autolife_robot_inspection import MODEL_CONFIG_PATH, MENU_CONFIG_PATH, FUNC_CONFIG_PATH
 
 class InspectionDetector:
@@ -197,6 +200,9 @@ class InspectionDetector:
         except Exception as e:
             print(f"[ERROR] Failed to run {test_name} test: {e}")
 
+
+    ########### ModuleTest ###########
+
     def motor_module_detection(self):
         detector = MotorDetector(self.model_config)
         motor_modules = detector.config['motor']['ENABLED_MODULES']
@@ -240,8 +246,7 @@ class InspectionDetector:
     def wifi_test(self):
         self._run_detector_subprocess(WifiDetector)
 
-    def other_functions_menu(self):
-        print("Other Functions: Coming soon...")
+    ########### IntegrationTest ###########
 
     def AutolifeTest(self):
         self._run_integration_test("AutolifeTest", "autolife_robot_inspection.IntegrationTest.AutolifeTest.main")
@@ -252,3 +257,12 @@ class InspectionDetector:
     def Welcome_guests(self):
         time.sleep(1)
         print("Welcome_guests over")
+
+    ########### OtherFunctions ###########
+    def robot_arm_start(self):
+        time.sleep(1)
+        print("robot_arm_start over")
+
+    def set_motor_zero(self):
+        time.sleep(1)
+        print("set_motor_zero over")
