@@ -23,7 +23,8 @@
       ],
       "IntegrationTest": [
         "1. Autolifetest",
-        "2. Welcome_guests"
+        "2. Car_movement",
+        "3. Welcome_guests"
       ],
       "NetworkTest": [
         "1. Internal network test",
@@ -55,7 +56,8 @@
       ],
       "IntegrationTest": [
         "1. Autolifetest",
-        "2. Welcome_guests"
+        "2. Car_movement",
+        "3. Welcome_guests"
       ],
       "NetworkTest": [
         "1. 内网测试",
@@ -76,7 +78,8 @@
     },
     "IntegrationTest": {
       "1": {"function": "AutolifeTest"},
-      "2": {"function": "Welcome_guests"}
+      "2": {"function": "Car_movement"},
+      "3": {"function": "Welcome_guests"}
     },
     "NetworkTest": {
       "1": {"function": "internal_network_test"},

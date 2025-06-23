@@ -11,6 +11,7 @@ import time
 import tty
 import traceback
 import threading
+import importlib.util
 from datetime import datetime
 
 from autolife_robot_inspection.ModuleTest import (
@@ -90,21 +91,21 @@ class InspectionDetector:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
             process.join()
 
-    def motor_module_detection(self):
+
+    def _module_detection(self, module_list, module_type, detector_class, check_func_name, parse_result):
         os.system('cls' if os.name == 'nt' else 'clear')
-        print("Press Ctrl+C to stop motor module detection...\n")
+        print(f"Press Ctrl+C to stop {module_type.lower()} module detection...\n")
+
+        manager = multiprocessing.Manager()
+        shared_log = manager.dict()
+        all_results = []
+
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        tty.setcbreak(fd)
 
         try:
-            motor_parts = MotorDetector().config['motor']['ENABLED_MODULES']
-            manager = multiprocessing.Manager()
-            shared_log = manager.dict()
-            all_results = {}
-
-            fd = sys.stdin.fileno()
-            old_settings = termios.tcgetattr(fd)
-            tty.setcbreak(fd)
-
-            for part in motor_parts:
+            for module in module_list:
                 try:
                     time.sleep(0.1)
                     if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
@@ -116,35 +117,44 @@ class InspectionDetector:
                     break
 
                 shared_log.clear()
-                print(f"Detecting motor module: {part}")
+                print(f"Detecting {module_type.lower()} module: {module}")
 
-                def detect_part(shared_log_):
+                def detect(shared):
                     try:
-                        detector = MotorDetector()
-                        detector._check_single_motor(part)
-                        shared_log_['log'] = detector.get_log().strip()
+                        detector = detector_class(self.model_config)
+                        getattr(detector, check_func_name)(module)
+                        shared['result'] = parse_result(detector, module)
                     except Exception as e:
-                        shared_log_['log'] = f"[{part}] Detection failed: {e}"
+                        shared['result'] = (module, f"Detection failed: {e}")
 
-                process = multiprocessing.Process(target=detect_part, args=(shared_log,))
+                process = multiprocessing.Process(target=detect, args=(shared_log,))
                 process.start()
+                process.join(timeout=15)
 
-                while process.is_alive():
-                    time.sleep(0.2)
-                process.join()
+                if process.is_alive():
+                    process.terminate()
+                    process.join()
+                    shared_log['result'] = (module, "Timeout after 15s")
 
-                all_results[part] = shared_log.get('log', f"[{part}] No detection result")
-                print(f"Module {part} detection completed.\n")
+                all_results.append(shared_log.get('result'))
+
+                print(f"Module {module} detection completed.\n")
 
         except Exception as e:
-            print(f"[ERROR] Motor detection error: {e}")
+            print(f"[ERROR] {module_type} detection error: {e}")
 
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
             os.system('cls' if os.name == 'nt' else 'clear')
-            print("\nAll modules detected, results:\n")
-            for part, result in all_results.items():
-                print(f"Module: {part}\n{result}\n")
+
+            print(f"\n {module_type} Detection Results\n" + "-" * 40)
+            print("{:<20} | {:<20}".format("Module", "Status"))
+            print("-" * 21 + "|" + "-" * 20)
+            for name, status in all_results:
+                print("{:<20} | {:<20}".format(
+                    name.replace("mod_camera_", "").replace("mod_motor_", ""), status
+                ))
+
             tty.setcbreak(fd)
             while True:
                 if sys.stdin in select.select([sys.stdin], [], [], 0.1)[0]:
@@ -152,9 +162,62 @@ class InspectionDetector:
                     break
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
-    # Shortcut wrapper methods
+    def _run_integration_test(self, test_name, module_path):
+        os.system('cls' if os.name == 'nt' else 'clear')
+        print("Press Ctrl+C to exit...\n")
+
+        def run_script():
+            try:
+                root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                script_path = os.path.join(root_dir, *module_path.split(".")) + ".py"
+                print(f"[INFO] Running: {script_path}")
+
+                # 将脚本所在目录临时添加到 sys.path
+                script_dir = os.path.dirname(script_path)
+                if script_dir not in sys.path:
+                    sys.path.insert(0, script_dir)
+
+                spec = importlib.util.spec_from_file_location(test_name, script_path)
+                test_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(test_module)
+
+                if hasattr(test_module, "main"):
+                    test_module.main()
+                else:
+                    print(f"[ERROR] No 'main()' found in {test_name}")
+            except Exception:
+                print(f"[ERROR] Exception in {test_name}:")
+                traceback.print_exc()
+
+        try:
+            thread = threading.Thread(target=run_script)
+            thread.start()
+            thread.join()
+            print(f"[INFO] {test_name} test finished.")
+        except Exception as e:
+            print(f"[ERROR] Failed to run {test_name} test: {e}")
+
+    def motor_module_detection(self):
+        detector = MotorDetector(self.model_config)
+        motor_modules = detector.config['motor']['ENABLED_MODULES']
+        self._module_detection(
+            module_list=motor_modules,
+            module_type="Motor",
+            detector_class=MotorDetector,
+            check_func_name="_check_single",
+            parse_result=lambda det, mod: (mod.replace("mod_motor_", ""), det.get_log().strip())
+        )
+
     def visual_module_detection(self):
-        self._run_detector_subprocess(CameraDetector)
+        detector = CameraDetector(self.model_config)
+        camera_modules = detector.config['camera']['ENABLED_MODULES']
+        self._module_detection(
+            module_list=camera_modules,
+            module_type="Camera",
+            detector_class=CameraDetector,
+            check_func_name="_check_single",
+            parse_result=lambda det, mod: det.log_buffer[-1] if det.log_buffer else (mod.replace("mod_camera_", ""), "No result")
+        )
 
     def audio_module_detection(self):
         self._run_detector_subprocess(AudioDetector, refresh_log=True)
@@ -181,30 +244,11 @@ class InspectionDetector:
         print("Other Functions: Coming soon...")
 
     def AutolifeTest(self):
-        os.system('cls' if os.name == 'nt' else 'clear')
-        print("Press Ctrl+C to exit...\n")
-                
-        def run_script():
-            root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            script_path = os.path.join(root_dir, "autolife_robot_inspection", "IntegrationTest", "AutolifeTest", "main.py")
-            print(f"[INFO] Running: {script_path}")
+        self._run_integration_test("AutolifeTest", "autolife_robot_inspection.IntegrationTest.AutolifeTest.main")
 
-            # 动态导入目标脚本
-            sys.path.append(os.path.dirname(script_path))
-            from IntegrationTest.AutolifeTest.main import main
-            main()
-
-        try:
-            # 创建线程运行目标脚本
-            thread = threading.Thread(target=run_script)
-            thread.start()
-
-            # 主线程继续运行，等待线程结束
-            thread.join()
-            print("[INFO] Integration test finished.")
-        except Exception as e:
-            print(f"[ERROR] Failed to run integration test: {e}")
+    def Car_movement(self):
+        self._run_integration_test("Car_movement", "autolife_robot_inspection.IntegrationTest.Car_movement.main")
 
     def Welcome_guests(self):
         time.sleep(1)
-        print("face_detection_test")
+        print("Welcome_guests over")

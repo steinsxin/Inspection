@@ -46,7 +46,7 @@ def check_task(node: ServerSubscriber) -> None:
     piper_voice.play_voice("语音模块就绪")
 
     # Create directory for saving test images
-    save_dir = "test_images"
+    save_dir = "camera_images"
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
@@ -80,6 +80,8 @@ def check_task(node: ServerSubscriber) -> None:
     try:
         for camera_name, file_path in camera_names.items():
             # Get camera image
+            image = hw_api.get_camera_image(camera_name)
+            time.sleep(0.1)
             image = hw_api.get_camera_image(camera_name)
             if isinstance(image, dict):
                 color_, depth_ = image['color'], image['depth']

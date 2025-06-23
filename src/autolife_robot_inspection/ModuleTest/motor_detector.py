@@ -56,7 +56,7 @@ class MotorDetector(DeviceInterface):
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
 
-    def _check_single_motor(self, motor_part):
+    def _check_single(self, motor_part):
         """
         Check a single motor module in a separate thread.
         Captures and stores the output log.
@@ -78,30 +78,45 @@ class MotorDetector(DeviceInterface):
 
     def _parse_log(self, output):
         """
-        Parse SDK output to detect successful and failed motor initialization.
+        Parse motor SDK output to detect success/failure per module.
         """
-        log_message = ""
-        success_pattern = r"(mod_motor_[\w\-]+):.*?registered on (PCAN_USBBUS\d+)"
-        error_pattern = (
-            r"(?P<module>mod_motor_\w+):\s*"
-            r"(电机 ID (?P<id>\d+),\s*Joint Name: (?P<joint>\w+)\s*在 (?P<can>PCAN_USBBUS\d+) 没有响应"
-            r"|(?P<error>电机连接失败))"
+        result = []
+
+        # 成功注册的模块（兼容 LK / EU / 任意 Motor Controller）
+        success_pattern = re.compile(
+            r"(mod_motor_[\w\-]+):\s+\w+\s+Motor Controller registered on (PCAN_USBBUS\d+)",
+            re.IGNORECASE
         )
 
-        for module_name, can_bus in re.findall(success_pattern, output):
-            log_message += f"模块: {module_name} 成功使能在 CAN 总线: {can_bus}\n"
+        # 电机无响应（指定 ID、关节名和 CAN 总线）
+        no_response_pattern = re.compile(
+            r"(mod_motor_[\w\-]+):\s*电机 ID\s+(\d+),\s*Joint Name:\s*([\w\-]+)\s*在\s*(PCAN_USBBUS\d+)\s*没有响应"
+        )
 
-        for match in re.finditer(error_pattern, output):
-            module = match.group('module')
-            if match.group('error'):
-                log_message += f"模块: {module} 电机连接失败\n"
-            else:
-                log_message += (
-                    f"模块: {module_name} 的 {match.group('id')} 电机, 序号为: {self.motor_map[match.group('id')]} , "
-                    f"Joint Name: {match.group('joint')} 在 CAN 总线: {match.group('can')} 没有响应\n"
-                )
+        # 模块完全连接失败
+        general_failure_pattern = re.compile(
+            r"(mod_motor_[\w\-]+):\s*电机连接失败"
+        )
 
-        return log_message or "未检测到电机模块或未成功使能。\n"
+        found = False
+
+        for mod, bus in success_pattern.findall(output):
+            result.append(f"模块 {mod:<22} | 状态: 正常             | 总线: {bus}")
+            found = True
+
+        for mod, motor_id, joint_name, bus in no_response_pattern.findall(output):
+            result.append(
+                f"模块 {mod:<22} | 电机 ID: {motor_id:<2} ({joint_name}) 无响应 | 总线: {bus}"
+            )
+            found = True
+
+        for mod in general_failure_pattern.findall(output):
+            result.append(f"模块 {mod:<22} | 状态: 电机连接失败")
+
+        if not found:
+            return "未检测到电机模块或日志格式异常。\n"
+
+        return "\n".join(result)
 
     def run(self):
         """Run motor detection for all motor modules."""

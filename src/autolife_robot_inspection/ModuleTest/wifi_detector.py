@@ -25,7 +25,7 @@ class WifiDetector(DeviceInterface):
         """Scan for available WiFi networks and return top 5 with signal strength."""
         try:
             # Use nmcli to scan WiFi networks
-            scan_cmd = ["sudo", "nmcli", "-t", "-f", "SSID,SIGNAL", "device", "wifi", "list"]
+            scan_cmd = ["nmcli", "-t", "-f", "SSID,SIGNAL", "device", "wifi", "list"]
             result = subprocess.run(scan_cmd, capture_output=True, text=True, check=True)
             
             # Parse the output
