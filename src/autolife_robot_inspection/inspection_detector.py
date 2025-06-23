@@ -260,8 +260,36 @@ class InspectionDetector:
 
     ########### OtherFunctions ###########
     def robot_arm_start(self):
+        os.system('cls' if os.name == 'nt' else 'clear')
+        print("Press any key to stop loopback...")
+        config = {
+            "hostname": "192.168.10.3",
+            "port": 22,
+            "username": "nvidia",
+            "password": "nvidia",
+            "python": "/home/nvidia/miniconda3/envs/ros2/bin/python",
+            "script_path": "autolife_robot_arm.main",
+            "log_path": "/home/nvidia/Documents/arm_output.log"
+        }
+
+        manager = RemoteScriptManager(
+            hostname=config["hostname"],
+            port=config["port"],
+            username=config["username"],
+            password=config["password"],
+            python_path=config["python"]
+        )
+
+        # 关闭已有程序
+        manager.stop_script()
         time.sleep(1)
+        
+        # 重启程序
+        manager.run_script(config["script_path"], config["log_path"])
+        time.sleep(1)
+        
         print("robot_arm_start over")
+        time.sleep(1)
 
     def set_motor_zero(self):
         time.sleep(1)
