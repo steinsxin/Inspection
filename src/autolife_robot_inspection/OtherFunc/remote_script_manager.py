@@ -1,5 +1,5 @@
-import paramiko
-
+import argparse
+from paramiko import SSHClient, AutoAddPolicy
 
 class RemoteScriptManager:
     """Manage execution and termination of a Python script on a remote device."""
@@ -23,13 +23,13 @@ class RemoteScriptManager:
 
     def _connect(self):
         """Establish an SSH connection to the remote device."""
-        self.ssh_client = paramiko.SSHClient()
-        self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self.ssh_client = SSHClient()
+        self.ssh_client.set_missing_host_key_policy(AutoAddPolicy())
         self.ssh_client.connect(
-            self.hostname, 
-            self.port, 
-            self.username, 
-            self.password
+            hostname=self.hostname,
+            port=self.port,
+            username=self.username,
+            password=self.password
         )
 
     def _disconnect(self):
@@ -39,51 +39,38 @@ class RemoteScriptManager:
             print("SSH connection closed.")
 
     def _is_script_running(self, script_path):
-        """Check if the script is already running on the remote device.
-        
-        Args:
-            script_path: Path to the Python script or module
-            
-        Returns:
-            bool: True if script is running, False otherwise
-        """
+        """Check if script is running on remote device."""
         check_cmd = f"pgrep -f '{self.python_path}.*{script_path}'"
         _, stdout, _ = self.ssh_client.exec_command(check_cmd)
         return bool(stdout.read().decode().strip())
 
-    def run_script(self, script_module_path, log_file_path):
-        """Run a Python script on the remote device in the background.
-        
-        Args:
-            script_module_path: Python module path (e.g., 'package.module')
-            log_file_path: Path to the log file on remote device
-        """
+    def run_script(self, script_path, log_path):
+        """Run a Python script on the remote device."""
         try:
             self._connect()
             
-            if self._is_script_running(script_module_path):
-                print("Script is already running. Failed to start.")
+            if self._is_script_running(script_path):
+                print(f"Script {script_path} is already running.")
                 return
 
-            cmd = (f"nohup chrt -r 99 {self.python_path} -u -m {script_module_path} "
-                   f"> {log_file_path} 2>&1 &")
+            cmd = (
+                f"nohup chrt -r 99 {self.python_path} -u -m {script_path} "
+                f"> {log_path} 2>&1 &"
+            )
             self.ssh_client.exec_command(cmd)
-            print("Script started successfully.")
-            
+            print(f"Script {script_path} started successfully.")
         except Exception as e:
-            print(f"Error connecting/executing command: {e}")
+            print(f"Error starting script: {e}")
         finally:
             self._disconnect()
 
-    def stop_script(self):
-        """Stop all Python processes on the remote device."""
+    def stop_arm_script(self):
+        """Stop all Python processes on ARM device (original logic)."""
         try:
             self._connect()
-            
             kill_cmd = "killall python"
             stdin, stdout, stderr = self.ssh_client.exec_command(kill_cmd)
             
-            # Check if killall command was successful
             exit_status = stdout.channel.recv_exit_status()
             if exit_status == 0:
                 print("All Python processes stopped successfully.")
@@ -93,33 +80,128 @@ class RemoteScriptManager:
                     print("No Python processes were running.")
                 else:
                     print(f"Error stopping Python processes: {error}")
-            
         except Exception as e:
-            print(f"Error connecting/executing command: {e}")
+            print(f"Error stopping ARM script: {e}")
+        finally:
+            self._disconnect()
+
+    def stop_vision_script(self):
+        """Stop vision script specifically (original logic)."""
+        script_path = "autolife_robot_vision.main"
+        try:
+            self._connect()
+            check_cmd = f"pgrep -f '{self.python_path}.*{script_path}'"
+            _, stdout, _ = self.ssh_client.exec_command(check_cmd)
+            pids = stdout.read().decode().strip()
+            
+            if not pids:
+                print(f"No running instances of {script_path} found.")
+                return
+                
+            kill_cmd = f"kill -9 {pids}"
+            stdin, stdout, stderr = self.ssh_client.exec_command(kill_cmd)
+            
+            exit_status = stdout.channel.recv_exit_status()
+            if exit_status == 0:
+                print(f"Vision script stopped successfully.")
+            else:
+                error = stderr.read().decode().strip()
+                print(f"Error stopping vision script: {error}")
+        except Exception as e:
+            print(f"Error stopping vision script: {e}")
         finally:
             self._disconnect()
 
 
-if __name__ == "__main__":
-    # Configuration
-    config = {
-        "hostname": "192.168.10.3",
-        "port": 22,
-        "username": "nvidia",
-        "password": "nvidia",
-        "python": "/home/nvidia/miniconda3/envs/ros2/bin/python",
-        "script_path": "autolife_robot_arm.main",
-        "log_path": "/home/nvidia/Documents/arm_output.log"
+def main():
+    """Main function to handle command line arguments."""
+    
+    '''
+    # 启动ARM脚本
+    python start_script.py start arm
+
+    # 停止Vision脚本
+    python start_script.py stop vision
+
+    # 同时启动两个脚本
+    python start_script.py start both
+
+    # 同时停止两个脚本
+    python start_script.py stop both
+    '''
+
+    configs = {
+        "vision": {
+            "hostname": "192.168.10.2",
+            "port": 22,
+            "username": "nvidia",
+            "password": "nvidia",
+            "python": "/home/nvidia/miniconda3/envs/ros2/bin/python",
+            "script_path": "autolife_robot_vision.main",
+            "log_path": "/home/nvidia/Documents/vision_output.log"
+        },
+        "arm": {
+            "hostname": "192.168.10.3",
+            "port": 22,
+            "username": "nvidia",
+            "password": "nvidia",
+            "python": "/home/nvidia/miniconda3/envs/ros2/bin/python",
+            "script_path": "autolife_robot_arm.main",
+            "log_path": "/home/nvidia/Documents/arm_output.log"
+        }
     }
 
-    manager = RemoteScriptManager(
-        hostname=config["hostname"],
-        port=config["port"],
-        username=config["username"],
-        password=config["password"],
-        python_path=config["python"]
+    parser = argparse.ArgumentParser(
+        description="Manage remote robot scripts"
     )
+    parser.add_argument(
+        "action",
+        choices=["start", "stop"],
+        help="Start or stop the script"
+    )
+    parser.add_argument(
+        "target",
+        choices=["arm", "vision", "both"],
+        help="Target script to control"
+    )
+    args = parser.parse_args()
 
-    # Uncomment to run or stop script
-    # manager.run_script(config["script_path"], config["log_path"])
-    manager.stop_script()
+    # Initialize managers
+    managers = {
+        "vision": RemoteScriptManager(
+            hostname=configs["vision"]["hostname"],
+            port=configs["vision"]["port"],
+            username=configs["vision"]["username"],
+            password=configs["vision"]["password"],
+            python_path=configs["vision"]["python"]
+        ),
+        "arm": RemoteScriptManager(
+            hostname=configs["arm"]["hostname"],
+            port=configs["arm"]["port"],
+            username=configs["arm"]["username"],
+            password=configs["arm"]["password"],
+            python_path=configs["arm"]["python"]
+        )
+    }
+
+    targets = [args.target] if args.target != "both" else ["arm", "vision"]
+
+    for target in targets:
+        print(f"{args.action.capitalize()}ing {target} script...")
+        config = configs[target]
+        manager = managers[target]
+
+        try:
+            if args.action == "start":
+                manager.run_script(config["script_path"], config["log_path"])
+            else:
+                if target == "arm":
+                    manager.stop_arm_script()
+                else:
+                    manager.stop_vision_script()
+        except Exception as e:
+            print(f"Error handling {target} script: {str(e)}")
+
+
+if __name__ == "__main__":
+    main()

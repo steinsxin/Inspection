@@ -262,26 +262,49 @@ class InspectionDetector:
     def robot_arm_start(self):
         os.system('cls' if os.name == 'nt' else 'clear')
         print("Press any key to stop loopback...")
-        config = {
-            "hostname": "192.168.10.3",
-            "port": 22,
-            "username": "nvidia",
-            "password": "nvidia",
-            "python": "/home/nvidia/miniconda3/envs/ros2/bin/python",
-            "script_path": "autolife_robot_arm.main",
-            "log_path": "/home/nvidia/Documents/arm_output.log"
+        configs = {
+            "vision": {
+                "hostname": "192.168.10.2",
+                "port": 22,
+                "username": "nvidia",
+                "password": "nvidia",
+                "python": "/home/nvidia/miniconda3/envs/ros2/bin/python",
+                "script_path": "autolife_robot_vision.main",
+                "log_path": "/home/nvidia/Documents/vision_output.log"
+            },
+            "arm": {
+                "hostname": "192.168.10.3",
+                "port": 22,
+                "username": "nvidia",
+                "password": "nvidia",
+                "python": "/home/nvidia/miniconda3/envs/ros2/bin/python",
+                "script_path": "autolife_robot_arm.main",
+                "log_path": "/home/nvidia/Documents/arm_output.log"
+            }
         }
 
-        manager = RemoteScriptManager(
-            hostname=config["hostname"],
-            port=config["port"],
-            username=config["username"],
-            password=config["password"],
-            python_path=config["python"]
-        )
+        managers = {
+            "vision": RemoteScriptManager(
+                hostname=configs["vision"]["hostname"],
+                port=configs["vision"]["port"],
+                username=configs["vision"]["username"],
+                password=configs["vision"]["password"],
+                python_path=configs["vision"]["python"]
+            ),
+            "arm": RemoteScriptManager(
+                hostname=configs["arm"]["hostname"],
+                port=configs["arm"]["port"],
+                username=configs["arm"]["username"],
+                password=configs["arm"]["password"],
+                python_path=configs["arm"]["python"]
+            )
+        }
+
+        config = configs['arm']
+        manager = managers['arm']
 
         # 关闭已有程序
-        manager.stop_script()
+        manager.stop_arm_script()
         time.sleep(1)
         
         # 重启程序
