@@ -116,20 +116,6 @@ class RemoteScriptManager:
 def main():
     """Main function to handle command line arguments."""
     
-    '''
-    # 启动ARM脚本
-    python start_script.py start arm
-
-    # 停止Vision脚本
-    python start_script.py stop vision
-
-    # 同时启动两个脚本
-    python start_script.py start both
-
-    # 同时停止两个脚本
-    python start_script.py stop both
-    '''
-
     configs = {
         "vision": {
             "hostname": "192.168.10.2",
@@ -151,18 +137,17 @@ def main():
         }
     }
 
-    parser = argparse.ArgumentParser(
-        description="Manage remote robot scripts"
-    )
+    parser = argparse.ArgumentParser(description="Manage remote robot scripts")
     parser.add_argument(
         "action",
         choices=["start", "stop"],
         help="Start or stop the script"
     )
     parser.add_argument(
-        "target",
-        choices=["arm", "vision", "both"],
-        help="Target script to control"
+        "targets",
+        nargs="+",
+        choices=["arm", "vision"],
+        help="Target scripts to control"
     )
     args = parser.parse_args()
 
@@ -183,10 +168,8 @@ def main():
             python_path=configs["arm"]["python"]
         )
     }
-
-    targets = [args.target] if args.target != "both" else ["arm", "vision"]
-
-    for target in targets:
+    
+    for target in args.targets:
         print(f"{args.action.capitalize()}ing {target} script...")
         config = configs[target]
         manager = managers[target]
@@ -197,7 +180,7 @@ def main():
             else:
                 if target == "arm":
                     manager.stop_arm_script()
-                else:
+                elif target == "vision":
                     manager.stop_vision_script()
         except Exception as e:
             print(f"Error handling {target} script: {str(e)}")
