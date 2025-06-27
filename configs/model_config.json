@@ -1,22 +1,22 @@
 {
   "robot_version": "robot_v1_0",
-  "ROS_DOMAIN_ID": 104,
+  "ROS_DOMAIN_ID": 100,
   "motor": {
     "ENABLED_MODULES": [
-      "mod_motor_left_arm", 
-      "mod_motor_right_arm", 
-      "mod_motor_waist-leg", 
+      "mod_motor_left_arm",
+      "mod_motor_right_arm",
+      "mod_motor_waist-leg",
       "mod_motor_gv"
     ]
   },
   "camera": {
     "ENABLED_MODULES": [
-      "mod_camera_head_left", 
-      "mod_camera_head_right", 
-      "mod_camera_head_rear", 
-      "mod_camera_hand_left", 
+      "mod_camera_head_left",
+      "mod_camera_head_right",
+      "mod_camera_head_rear",
+      "mod_camera_hand_left",
       "mod_camera_hand_right"
-    ] 
+    ]
   },
   "audio": {
     "ENABLED_MODULES": [
