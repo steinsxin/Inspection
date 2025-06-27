@@ -1,8 +1,10 @@
+import time
 import argparse
 from paramiko import SSHClient, AutoAddPolicy
 
 class RemoteScriptManager:
     """Manage execution and termination of a Python script on a remote device."""
+    ROS_DOMAIN_ID = 100  # You can change this value as needed
 
     def __init__(self, hostname, port, username, password, python_path="python"):
         """Initialize connection information for the remote device.
@@ -45,7 +47,8 @@ class RemoteScriptManager:
         return bool(stdout.read().decode().strip())
 
     def run_script(self, script_path, log_path):
-        """Run a Python script on the remote device."""
+        """Run a Python script on the remote device using the class-defined ROS_DOMAIN_ID."""
+        print(RemoteScriptManager.ROS_DOMAIN_ID)
         try:
             self._connect()
             
@@ -54,6 +57,7 @@ class RemoteScriptManager:
                 return
 
             cmd = (
+                f"export ROS_DOMAIN_ID={RemoteScriptManager.ROS_DOMAIN_ID}; "
                 f"nohup chrt -r 99 {self.python_path} -u -m {script_path} "
                 f"> {log_path} 2>&1 &"
             )
@@ -65,7 +69,7 @@ class RemoteScriptManager:
             self._disconnect()
 
     def stop_arm_script(self):
-        """Stop all Python processes on ARM device (original logic)."""
+        """Stop all Python processes on ARM device."""
         try:
             self._connect()
             kill_cmd = "killall python"
@@ -86,7 +90,7 @@ class RemoteScriptManager:
             self._disconnect()
 
     def stop_vision_script(self):
-        """Stop vision script specifically (original logic)."""
+        """Stop vision script specifically."""
         script_path = "autolife_robot_vision.main"
         try:
             self._connect()
@@ -116,6 +120,20 @@ class RemoteScriptManager:
 def main():
     """Main function to handle command line arguments."""
     
+    parser = argparse.ArgumentParser(description="Manage remote robot scripts")
+    parser.add_argument(
+        "action",
+        choices=["start", "stop", "restart"],
+        help="Start, stop, or restart the script"
+    )
+    parser.add_argument(
+        "targets",
+        nargs="+",
+        choices=["arm", "vision"],
+        help="Target scripts to control"
+    )
+    args = parser.parse_args()
+
     configs = {
         "vision": {
             "hostname": "192.168.10.2",
@@ -136,20 +154,6 @@ def main():
             "log_path": "/home/nvidia/Documents/arm_output.log"
         }
     }
-
-    parser = argparse.ArgumentParser(description="Manage remote robot scripts")
-    parser.add_argument(
-        "action",
-        choices=["start", "stop"],
-        help="Start or stop the script"
-    )
-    parser.add_argument(
-        "targets",
-        nargs="+",
-        choices=["arm", "vision"],
-        help="Target scripts to control"
-    )
-    args = parser.parse_args()
 
     # Initialize managers
     managers = {
@@ -177,11 +181,21 @@ def main():
         try:
             if args.action == "start":
                 manager.run_script(config["script_path"], config["log_path"])
-            else:
+            elif args.action == "stop":
                 if target == "arm":
                     manager.stop_arm_script()
                 elif target == "vision":
                     manager.stop_vision_script()
+            elif args.action == "restart":
+                if target == "arm":
+                    manager.stop_arm_script()
+                    time.sleep(1)
+                    manager.run_script(config["script_path"], config["log_path"])
+                elif target == "vision":
+                    manager.stop_vision_script()
+                    time.sleep(1)
+                    manager.run_script(config["script_path"], config["log_path"])
+
         except Exception as e:
             print(f"Error handling {target} script: {str(e)}")
 

@@ -262,6 +262,8 @@ class InspectionDetector:
     def robot_arm_start(self):
         os.system('cls' if os.name == 'nt' else 'clear')
         print("Press any key to stop loopback...")
+
+        RemoteScriptManager.ROS_DOMAIN_ID = self.model_config["ROS_DOMAIN_ID"]
         configs = {
             "vision": {
                 "hostname": "192.168.10.2",

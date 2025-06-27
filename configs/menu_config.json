@@ -29,6 +29,10 @@
       "NetworkTest": [
         "1. Internal network test",
         "2. WIFI test"
+      ],
+      "OtherFunctions": [
+        "1. autolife_robot_arm start",
+        "2. set_motor_zero"
       ]
     }
   },
@@ -62,6 +66,10 @@
       "NetworkTest": [
         "1. 内网测试",
         "2. WIFI测试"
+      ],
+      "OtherFunctions": [
+        "1. autolife_robot_arm 启动",
+        "2. 电机零点重置"
       ]
     }
   },
@@ -84,6 +92,10 @@
     "NetworkTest": {
       "1": {"function": "internal_network_test"},
       "2": {"function": "wifi_test"}
+    },
+    "OtherFunctions": {
+      "1": {"function": "robot_arm_start"},
+      "2": {"function": "set_motor_zero"}
     }
   }
 }
