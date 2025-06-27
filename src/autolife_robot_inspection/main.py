@@ -1,4 +1,5 @@
 import json
+import re
 import multiprocessing
 import os
 import select
@@ -8,6 +9,7 @@ import sys
 import termios
 import time
 import tty
+import logging
 import traceback
 from datetime import datetime
 from autolife_robot_inspection import MODEL_CONFIG_PATH, MENU_CONFIG_PATH, FUNC_CONFIG_PATH
@@ -19,18 +21,61 @@ class InspectionUI:
         self.language = language
         self.current_menu = 'Jetson'
         self.border_width = 50
-
-        try:
-            with open(MENU_CONFIG_PATH, 'r', encoding='utf-8') as f:
-                self.menu_config = json.load(f)
-        except Exception as e:
-            logging.error(f"Failed to load config '{MENU_CONFIG_PATH}': {e}")
-            raise
+        
+        self.menu_config = self._load_json_config(MENU_CONFIG_PATH)
+        self.func_config = self._load_json_config(FUNC_CONFIG_PATH)
 
         self.hostname = socket.gethostname()
         self.device_type = self._detect_device_type()
         self.detector = InspectionDetector(language)
         self.text = self._load_text()
+        self.update_ros_domain_id(self.hostname,MODEL_CONFIG_PATH)
+
+    def _load_json_config(self, path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logging.error(f"Failed to load config '{path}': {e}")
+            raise
+
+    def update_ros_domain_id(self, hostname, config_file_path):
+        """
+        Extract a number from the hostname and update the ROS_DOMAIN_ID in the specified JSON configuration file.
+
+        Parameters:
+            hostname (str): The hostname string containing a number, e.g., "NX-104", "nano-104", or "orangepi-104".
+            config_file_path (str): The path to the JSON configuration file.
+
+        Returns:
+            None
+        """
+        match = re.search(r'\d+', hostname)
+        if match:
+            # Extract the number from the hostname
+            extracted_number = int(match.group())
+            
+            try:
+                # Open and read the JSON configuration file
+                with open(config_file_path, 'r') as file:
+                    config_data = json.load(file)
+                
+                # Update the ROS_DOMAIN_ID
+                config_data['ROS_DOMAIN_ID'] = extracted_number
+                
+                # Write the updated data back to the file
+                with open(config_file_path, 'w') as file:
+                    json.dump(config_data, file, indent=2)
+                
+                print(f"ROS_DOMAIN_ID has been successfully updated to {extracted_number}")
+            except FileNotFoundError:
+                print(f"File {config_file_path} not found. Please check the path.")
+            except json.JSONDecodeError:
+                print(f"File {config_file_path} is not a valid JSON format.")
+            except Exception as e:
+                print(f"Error occurred while updating the file: {e}")
+        else:
+            print("No number found in the hostname.")
 
     def start(self):
         """Start the UI loop."""
@@ -89,6 +134,7 @@ class InspectionUI:
                         self.display_ui()
                     elif 'function' in action:
                         func = getattr(self.detector, action['function'], None)
+                        print(func)
                         if callable(func):
                             option_text = self.text['options'][int(key) - 1].split('. ')[1]
                             print(f"\n{option_text}: {self.text['running']}")
@@ -107,20 +153,19 @@ class InspectionUI:
         text = self.menu_config[self.language].copy()
 
         if self.current_menu == 'ModuleTest':
-            device_config = self.menu_config.get('device_config', {})
-            device_info = device_config.get(self.device_type, {})
+            device_info = self.func_config.get(self.device_type, {})
             options = device_info.get('options', {}).get(self.language, [])
         else:
             options = self.menu_config[self.language]['options'].get(self.current_menu, [])
-
+        
         text['options'] = options
         return text
 
     def _get_current_actions(self):
         """Return key-action mappings based on current menu and device."""
         if self.current_menu == 'ModuleTest':
-            device_config = self.menu_config.get('device_config', {})
-            return device_config.get(self.device_type, {}).get('actions', {})
+            device_info = self.func_config.get(self.device_type, {})
+            return device_info.get('actions', {})
         return self.menu_config['actions'].get(self.current_menu, {})
 
     def _detect_device_type(self):

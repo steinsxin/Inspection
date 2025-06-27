@@ -22,12 +22,17 @@
         "1. Hardware Info"
       ],
       "IntegrationTest": [
-        "1. Full Vehicle test",
-        "2. Face Detection"
+        "1. Autolifetest",
+        "2. Car_movement",
+        "3. Welcome_guests"
       ],
       "NetworkTest": [
         "1. Internal network test",
         "2. WIFI test"
+      ],
+      "OtherFunctions": [
+        "1. autolife_robot_arm start",
+        "2. set_motor_zero"
       ]
     }
   },
@@ -54,12 +59,17 @@
         "1. 硬件信息"
       ],
       "IntegrationTest": [
-        "1. 整车测试",
-        "2. 人脸检测"
+        "1. Autolifetest",
+        "2. Car_movement",
+        "3. Welcome_guests"
       ],
       "NetworkTest": [
         "1. 内网测试",
         "2. WIFI测试"
+      ],
+      "OtherFunctions": [
+        "1. autolife_robot_arm 启动",
+        "2. 电机零点重置"
       ]
     }
   },
@@ -75,12 +85,17 @@
       "1": {"function": "hardware_info"}
     },
     "IntegrationTest": {
-      "1": {"function": "full_vehicle_test"},
-      "2": {"function": "face_detection_test"}
+      "1": {"function": "AutolifeTest"},
+      "2": {"function": "Car_movement"},
+      "3": {"function": "Welcome_guests"}
     },
     "NetworkTest": {
       "1": {"function": "internal_network_test"},
       "2": {"function": "wifi_test"}
+    },
+    "OtherFunctions": {
+      "1": {"function": "robot_arm_start"},
+      "2": {"function": "set_motor_zero"}
     }
   }
 }
