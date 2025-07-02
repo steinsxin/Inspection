@@ -226,13 +226,10 @@ class InspectionDetector:
 
     def hardware_info(self, stop_event=None):
         try:
-            if self._log_screen:
-                self._log_screen.append_log("Press any key to stop loopback...")
             detector = HardwareDetector(self.model_config)
             log_content = detector.get_log()
             if self._log_screen:
                 self._log_screen.append_log(log_content)
-                self._log_screen.append_log("Press 'b' or 'escape' to return.")
 
             if stop_event:
                 while not stop_event.is_set():
