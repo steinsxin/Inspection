@@ -47,47 +47,26 @@ class InspectionDetector:
             logging.error(f"Failed to load config '{path}': {e}")
             raise
 
-    def _run_detector_subprocess(self, detector_cls, refresh_log=False, stop_event=None):
-        if self._log_screen:
-            self._log_screen.update_log_display("Press any key to stop loopback...")
-
-        manager = multiprocessing.Manager()
-        shared_log = manager.dict()
-
-        def run_detection(shared_log):
-            try:
-                detector = detector_cls(self.model_config)
-                shared_log['log'] = detector.get_log()
-                if self._log_screen:
-                    self._log_screen.append_log(shared_log['log'])
-                while True:
-                    if stop_event and stop_event.is_set():
-                        break
-                    detector.run()
-                    shared_log['log'] = detector.get_log()
-            except Exception as e:
-                if self._log_screen:
-                    self._log_screen.append_log(f"Error during module detection: {e}")
-
-        process = multiprocessing.Process(target=run_detection, args=(shared_log,))
-        process.start()
-
+    def _run_direct_log_detector(self, DetectorClass, stop_event=None):
+        """
+        Runs a detector synchronously, fetches log, and optionally waits until stop_event is set.
+        Used for detectors like WifiDetector and HardwareDetector that run directly and produce logs.
+        """
         try:
-            while process.is_alive():
-                if stop_event and stop_event.is_set():
-                    process.terminate()
-                    process.join()
-                    break
-                if refresh_log and 'log' in shared_log:
-                    if self._log_screen:
-                        self._log_screen.append_log("Press any key to stop loopback...")
-                        self._log_screen.append_log(shared_log['log'])
+            detector = DetectorClass(self.model_config)
+            log_content = detector.get_log()
+            if self._log_screen:
+                self._log_screen.append_log(log_content)
+
+            if stop_event:
+                while not stop_event.is_set():
                     time.sleep(0.1)
-                time.sleep(0.1) # Prevent busy-waiting
-        finally:
-            process.join()
-            if 'log' in shared_log and self._log_screen:
-                self._log_screen.append_log(shared_log['log'])
+
+        except Exception as e:
+            if self._log_screen:
+                self._log_screen.append_log(
+                    f"Error during {DetectorClass.__name__} detection: {e}"
+                )
 
 
     def _module_detection(self, module_list, module_type, detector_class, check_func_name, parse_result):
@@ -212,38 +191,26 @@ class InspectionDetector:
             parse_result=lambda det, mod: det.log_buffer[-1] if det.log_buffer else (mod.replace("mod_camera_", ""), "No result")
         )
 
-    def audio_module_detection(self):
-        self._run_detector_subprocess(AudioDetector, refresh_log=True)
+    def audio_module_detection(self, stop_event=None):
+        self._run_direct_log_detector(AudioDetector, stop_event)
 
-    def lidar_module_detection(self):
-        self._run_detector_subprocess(LidarDetector)
+    def lidar_module_detection(self, stop_event=None):
+        self._run_direct_log_detector(LidarDetector, stop_event)
 
-    def battery_module_detection(self):
-        self._run_detector_subprocess(BatteryDetector, refresh_log=True)
+    def battery_module_detection(self, stop_event=None):
+        self._run_direct_log_detector(BatteryDetector, stop_event)
 
-    def imu_module_detection(self):
-        self._run_detector_subprocess(IMUDetector, refresh_log=True)
+    def imu_module_detection(self, stop_event=None):
+        self._run_direct_log_detector(IMUDetector, stop_event)
 
     def hardware_info(self, stop_event=None):
-        try:
-            detector = HardwareDetector(self.model_config)
-            log_content = detector.get_log()
-            if self._log_screen:
-                self._log_screen.append_log(log_content)
+        self._run_direct_log_detector(HardwareDetector, stop_event)
 
-            if stop_event:
-                while not stop_event.is_set():
-                    time.sleep(0.1)
+    def internal_network_test(self, stop_event=None):
+        self._run_direct_log_detector(InternalDetector, stop_event)
 
-        except Exception as e:
-            if self._log_screen:
-                self._log_screen.append_log(f"Error during hardware detection: {e}")
-
-    def internal_network_test(self):
-        self._run_detector_subprocess(InternalDetector)
-
-    def wifi_test(self):
-        self._run_detector_subprocess(WifiDetector)
+    def wifi_test(self, stop_event=None):
+        self._run_direct_log_detector(WifiDetector, stop_event)
 
     ########### IntegrationTest ###########
 
