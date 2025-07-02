@@ -59,8 +59,25 @@ class InspectionDetector:
                 self._log_screen.append_log(log_content)
 
             if stop_event:
-                while not stop_event.is_set():
-                    time.sleep(0.1)
+                import queue
+                input_q = queue.Queue()
+
+                if self._log_screen:
+                    self._log_screen.start_keyboard_capture(input_q)
+
+                try:
+                    while not stop_event.is_set():
+                        try:
+                            key = input_q.get_nowait()
+                            if self._log_screen:
+                                self._log_screen.append_log(f"Received command: {key}")
+
+                        except queue.Empty:
+                            pass
+                        time.sleep(0.1)
+                finally:
+                    if self._log_screen:
+                        self._log_screen.stop_keyboard_capture()
 
         except Exception as e:
             if self._log_screen:

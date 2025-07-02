@@ -35,12 +35,16 @@ class LogScreen(Screen):
     def __init__(self, stop_event: threading.Event, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.stop_event = stop_event
+        self.capturing_keyboard = False
+        self.input_queue = None
+        self.input_buffer = []
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Container(id="log-container"):
             with VerticalScroll(id="output_scroll", classes="output-display"):
                 yield Label("", id="output_label")
+            yield Label("", id="input_line_label")
         yield Footer()
 
     def watch_log_content(self, old: str, new: str) -> None:
@@ -53,11 +57,37 @@ class LogScreen(Screen):
     def append_log(self, message: str) -> None:
         self.log_content = f"{self.log_content}\n{message}"
 
+    def on_key(self, event: 'Key') -> None:
+        if self.capturing_keyboard and self.input_queue:
+            self.input_queue.put(event.key)
+
+        # Update the visual input line for user feedback
+        if event.key == 'enter':
+            self.input_buffer.clear()
+        elif event.key == 'backspace':
+            if self.input_buffer:
+                self.input_buffer.pop()
+        elif event.is_printable:
+            self.input_buffer.append(event.key)
+
+    def start_keyboard_capture(self, q: 'Queue'):
+        """Called by the detector to start capturing keyboard input."""
+        self.input_queue = q
+        self.capturing_keyboard = True
+        self.input_buffer = []
+
+    def stop_keyboard_capture(self):
+        """Called by the detector to stop capturing keyboard input."""
+        self.capturing_keyboard = False
+        self.input_queue = None
+        self.input_buffer = None
+
     def action_stop_process(self) -> None:
         if self.stop_event:
             self.stop_event.set()
             self.notify("Stopping inspection...")
             self.app.pop_screen()
+
 
 
 class InspectionUI(App):
