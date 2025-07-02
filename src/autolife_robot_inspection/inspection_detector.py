@@ -2,13 +2,13 @@ import json
 import multiprocessing
 import logging
 import os
-import select
+
 import socket
 import subprocess
 import sys
-import termios
+
 import time
-import tty
+
 import traceback
 import threading
 import importlib.util
@@ -31,11 +31,13 @@ class InspectionDetector:
 
     def __init__(self, language='en'):
         self.language = language
+        self._log_screen = None
         self.timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.original_stdout = sys.stdout
-        self.original_stderr = sys.stderr
         self.model_config = self._load_json_config(MODEL_CONFIG_PATH)
         self.func_config = self._load_json_config(FUNC_CONFIG_PATH)
+
+    def set_log_screen(self, log_screen_instance):
+        self._log_screen = log_screen_instance
 
     def _load_json_config(self, path):
         try:
@@ -45,82 +47,69 @@ class InspectionDetector:
             logging.error(f"Failed to load config '{path}': {e}")
             raise
 
-    def _run_detector_subprocess(self, detector_cls, refresh_log=False):
-        os.system('cls' if os.name == 'nt' else 'clear')
-        print("Press any key to stop loopback...")
+    def _run_detector_subprocess(self, detector_cls, refresh_log=False, stop_event=None):
+        if self._log_screen:
+            self._log_screen.update_log_display("Press any key to stop loopback...")
 
         manager = multiprocessing.Manager()
         shared_log = manager.dict()
-        key_queue = multiprocessing.Queue()
 
         def run_detection(shared_log):
             try:
                 detector = detector_cls(self.model_config)
                 shared_log['log'] = detector.get_log()
-                print(shared_log['log'])
-                sys.stdout = open(os.devnull, 'w')
-                sys.stderr = open(os.devnull, 'w')
+                if self._log_screen:
+                    self._log_screen.append_log(shared_log['log'])
                 while True:
-                    if not key_queue.empty():
-                        detector.get_keyboard_data(key_queue.get())
-                    shared_log['log'] = detector.get_log()
+                    if stop_event and stop_event.is_set():
+                        break
                     detector.run()
+                    shared_log['log'] = detector.get_log()
             except Exception as e:
-                print(f"Error during module detection: {e}")
+                if self._log_screen:
+                    self._log_screen.append_log(f"Error during module detection: {e}")
 
         process = multiprocessing.Process(target=run_detection, args=(shared_log,))
         process.start()
 
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-        tty.setcbreak(fd)
         try:
             while process.is_alive():
+                if stop_event and stop_event.is_set():
+                    process.terminate()
+                    process.join()
+                    break
                 if refresh_log and 'log' in shared_log:
-                    sys.stdout = self.original_stdout
-                    sys.stderr = self.original_stderr
-                    os.system('cls' if os.name == 'nt' else 'clear')
-                    print("Press any key to stop loopback...")
-                    print(shared_log['log'])
+                    if self._log_screen:
+                        self._log_screen.append_log("Press any key to stop loopback...")
+                        self._log_screen.append_log(shared_log['log'])
                     time.sleep(0.1)
-                if sys.stdin in select.select([sys.stdin], [], [], 0.1)[0]:
-                    char = sys.stdin.read(1)
-                    key_queue.put(char)
-                    if char not in ['+', '-']:
-                        print("Stopping loopback...")
-                        process.terminate()
-                        break
+                time.sleep(0.1) # Prevent busy-waiting
         finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
             process.join()
+            if 'log' in shared_log and self._log_screen:
+                self._log_screen.append_log(shared_log['log'])
 
 
     def _module_detection(self, module_list, module_type, detector_class, check_func_name, parse_result):
-        os.system('cls' if os.name == 'nt' else 'clear')
-        print(f"Press Ctrl+C to stop {module_type.lower()} module detection...\n")
+        if self.ui_callback:
+            self.ui_callback(f"Press Ctrl+C to stop {module_type.lower()} module detection...\n")
 
         manager = multiprocessing.Manager()
         shared_log = manager.dict()
         all_results = []
 
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-        tty.setcbreak(fd)
-
         try:
             for module in module_list:
                 try:
                     time.sleep(0.1)
-                    if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
-                        sys.stdin.read(1)
-                        print("\nUser interrupted detection.\n")
-                        break
                 except KeyboardInterrupt:
-                    print("\nUser stopped detection via Ctrl+C.\n")
+                    if self.ui_callback:
+                        self.ui_callback("\nUser stopped detection via Ctrl+C.\n")
                     break
 
                 shared_log.clear()
-                print(f"Detecting {module_type.lower()} module: {module}")
+                if self.ui_callback:
+                    self.ui_callback(f"Detecting {module_type.lower()} module: {module}")
 
                 def detect(shared):
                     try:
@@ -141,39 +130,33 @@ class InspectionDetector:
 
                 all_results.append(shared_log.get('result'))
 
-                print(f"Module {module} detection completed.\n")
+                if self.ui_callback:
+                    self.ui_callback(f"Module {module} detection completed.\n")
 
         except Exception as e:
-            print(f"[ERROR] {module_type} detection error: {e}")
+            if self.ui_callback:
+                self.ui_callback(f"[ERROR] {module_type} detection error: {e}")
 
         finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-            os.system('cls' if os.name == 'nt' else 'clear')
-
-            print(f"\n {module_type} Detection Results\n" + "-" * 40)
-            print("{:<20} | {:<20}".format("Module", "Status"))
-            print("-" * 21 + "|" + "-" * 20)
-            for name, status in all_results:
-                print("{:<20} | {:<20}".format(
-                    name.replace("mod_camera_", "").replace("mod_motor_", ""), status
-                ))
-
-            tty.setcbreak(fd)
-            while True:
-                if sys.stdin in select.select([sys.stdin], [], [], 0.1)[0]:
-                    sys.stdin.read(1)
-                    break
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            if self.ui_callback:
+                self.ui_callback(f"\n {module_type} Detection Results\n" + "-" * 40)
+                self.ui_callback("{:<20} | {:<20}".format("Module", "Status"))
+                self.ui_callback("-" * 21 + "|" + "-" * 20)
+                for name, status in all_results:
+                    self.ui_callback("{:<20} | {:<20}".format(
+                        name.replace("mod_camera_", "").replace("mod_motor_", ""), status
+                    ))
 
     def _run_integration_test(self, test_name, module_path):
-        os.system('cls' if os.name == 'nt' else 'clear')
-        print("Press Ctrl+C to exit...\n")
+        if self.ui_callback:
+            self.ui_callback("Press Ctrl+C to exit...\n")
 
         def run_script():
             try:
                 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 script_path = os.path.join(root_dir, *module_path.split(".")) + ".py"
-                print(f"[INFO] Running: {script_path}")
+                if self.ui_callback:
+                    self.ui_callback(f"[INFO] Running: {script_path}")
 
                 # 将脚本所在目录临时添加到 sys.path
                 script_dir = os.path.dirname(script_path)
@@ -187,18 +170,22 @@ class InspectionDetector:
                 if hasattr(test_module, "main"):
                     test_module.main()
                 else:
-                    print(f"[ERROR] No 'main()' found in {test_name}")
+                    if self.ui_callback:
+                        self.ui_callback(f"[ERROR] No 'main()' found in {test_name}")
             except Exception:
-                print(f"[ERROR] Exception in {test_name}:")
-                traceback.print_exc()
+                if self.ui_callback:
+                    self.ui_callback(f"[ERROR] Exception in {test_name}:")
+                    self.ui_callback(traceback.format_exc())
 
         try:
             thread = threading.Thread(target=run_script)
             thread.start()
             thread.join()
-            print(f"[INFO] {test_name} test finished.")
+            if self.ui_callback:
+                self.ui_callback(f"[INFO] {test_name} test finished.")
         except Exception as e:
-            print(f"[ERROR] Failed to run {test_name} test: {e}")
+            if self.ui_callback:
+                self.ui_callback(f"[ERROR] Failed to run {test_name} test: {e}")
 
 
     ########### ModuleTest ###########
@@ -237,8 +224,23 @@ class InspectionDetector:
     def imu_module_detection(self):
         self._run_detector_subprocess(IMUDetector, refresh_log=True)
 
-    def hardware_info(self):
-        self._run_detector_subprocess(HardwareDetector)
+    def hardware_info(self, stop_event=None):
+        try:
+            if self._log_screen:
+                self._log_screen.append_log("Press any key to stop loopback...")
+            detector = HardwareDetector(self.model_config)
+            log_content = detector.get_log()
+            if self._log_screen:
+                self._log_screen.append_log(log_content)
+                self._log_screen.append_log("Press 'b' or 'escape' to return.")
+
+            if stop_event:
+                while not stop_event.is_set():
+                    time.sleep(0.1)
+
+        except Exception as e:
+            if self._log_screen:
+                self._log_screen.append_log(f"Error during hardware detection: {e}")
 
     def internal_network_test(self):
         self._run_detector_subprocess(InternalDetector)
@@ -256,12 +258,13 @@ class InspectionDetector:
 
     def Welcome_guests(self):
         time.sleep(1)
-        print("Welcome_guests over")
+        if self.ui_callback:
+            self.ui_callback("Welcome_guests over")
 
     ########### OtherFunctions ###########
     def robot_arm_start(self):
-        os.system('cls' if os.name == 'nt' else 'clear')
-        print("Press any key to stop loopback...")
+        if self.ui_callback:
+            self.ui_callback("Press any key to stop loopback...")
 
         RemoteScriptManager.ROS_DOMAIN_ID = self.model_config["ROS_DOMAIN_ID"]
         configs = {
@@ -313,9 +316,11 @@ class InspectionDetector:
         manager.run_script(config["script_path"], config["log_path"])
         time.sleep(1)
         
-        print("robot_arm_start over")
+        if self.ui_callback:
+            self.ui_callback("robot_arm_start over")
         time.sleep(1)
 
     def set_motor_zero(self):
         time.sleep(1)
-        print("set_motor_zero over")
+        if self.ui_callback:
+            self.ui_callback("set_motor_zero over")

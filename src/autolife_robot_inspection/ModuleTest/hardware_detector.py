@@ -229,10 +229,9 @@ class HardwareDetector(DeviceInterface):
 
     def run(self):
         """
-        Idle loop to simulate ongoing monitoring.
+        Perform a single hardware detection and update the log.
         """
-        while True:
-            time.sleep(1)
+        self.log = self.get_log()
         return None
 
 

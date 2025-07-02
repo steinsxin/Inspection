@@ -6,30 +6,97 @@ import select
 import socket
 import subprocess
 import sys
-import termios
 import time
-import tty
 import logging
 import traceback
+import threading
 from datetime import datetime
 from autolife_robot_inspection import MODEL_CONFIG_PATH, MENU_CONFIG_PATH, FUNC_CONFIG_PATH
 from autolife_robot_inspection.inspection_detector import InspectionDetector
 
-class InspectionUI:
-    def __init__(self, language='en'):
-        """Initialize UI with menu config, device info, and default state."""
-        self.language = language
-        self.current_menu = 'Jetson'
-        self.border_width = 50
-        
+from textual.app import App, ComposeResult
+from textual.containers import Container, VerticalScroll
+from textual.widgets import Header, Footer, Label, Button, Switch
+from textual.reactive import reactive
+
+from textual.screen import Screen
+from textual.css.query import NoMatches
+
+class LogScreen(Screen):
+    BINDINGS = [
+        ("b", "app.pop_screen", "返回"),
+        ("escape", "app.pop_screen", "返回"),
+        ("s", "action_stop_process", "停止"),
+    ]
+
+    log_content = reactive("")  # 使用 reactive 自动触发 UI 更新
+
+    def __init__(self, stop_event: threading.Event, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.stop_event = stop_event
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Container(id="log-container"):
+            with VerticalScroll(id="output_scroll", classes="output-display"):
+                yield Label("", id="output_label")  # 初始为空
+            yield Button("停止", id="stop_button", classes="-hidden")
+        yield Footer()
+
+    def watch_log_content(self, old: str, new: str) -> None:
+        """log_content 变化时自动更新 UI"""
+        try:
+            self.query_one("#output_label").update(new)  # 更新 Label 内容
+            self.query_one("#output_scroll").scroll_end()  # 自动滚动到底部
+        except NoMatches:
+            pass  # 忽略未加载的情况
+
+    def append_log(self, message: str) -> None:
+        """添加日志（同时更新 UI）"""
+        self.log_content = f"{self.log_content}\n{message}"  # 创建新字符串以触发 reactive
+
+    def action_stop_process(self) -> None:
+        """停止当前检测进程"""
+        if self.stop_event:
+            self.stop_event.set()
+            self.notify("正在停止检测...")
+            self.app.pop_screen()
+
+class InspectionUI(App):
+    CSS_PATH = "mouse_interaction.tcss"
+    BINDINGS = [
+        ("escape", "quit", "退出程序"),
+        ("w", "switch_language", "切换语言"),
+        ("b", "go_back", "返回主菜单"),
+    ]
+
+    language = reactive("zh")
+    current_menu = reactive("Jetson")
+    hostname = reactive("")
+    device_type = reactive("")
+    text = reactive({})
+    _mounted = reactive(False)
+
+    def __init__(self, language='zh', *args, **kwargs):
         self.menu_config = self._load_json_config(MENU_CONFIG_PATH)
         self.func_config = self._load_json_config(FUNC_CONFIG_PATH)
-
-        self.hostname = socket.gethostname()
+        super().__init__(*args, **kwargs)
+        self.language = language
+        self.hostname = "NX-100" # For testing purposes
         self.device_type = self._detect_device_type()
         self.detector = InspectionDetector(language)
-        self.text = self._load_text()
-        self.update_ros_domain_id(self.hostname,MODEL_CONFIG_PATH)
+        self.update_ros_domain_id(self.hostname, MODEL_CONFIG_PATH)
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Container(id="main-container"):
+            yield Label(id="title")
+            yield Label(id="hostname")
+            yield Label(id="device")
+            yield Label(id="quit_language_info")
+            yield VerticalScroll(id="options_container")
+            yield Label(id="back_info")
+        yield Footer()
 
     def _load_json_config(self, path):
         try:
@@ -67,86 +134,92 @@ class InspectionUI:
                 with open(config_file_path, 'w') as file:
                     json.dump(config_data, file, indent=2)
                 
-                print(f"ROS_DOMAIN_ID has been successfully updated to {extracted_number}")
+                self.notify(f"ROS_DOMAIN_ID has been successfully updated to {extracted_number}")
             except FileNotFoundError:
-                print(f"File {config_file_path} not found. Please check the path.")
+                self.notify(f"File {config_file_path} not found. Please check the path.")
             except json.JSONDecodeError:
-                print(f"File {config_file_path} is not a valid JSON format.")
+                self.notify(f"File {config_file_path} is not a valid JSON format.")
             except Exception as e:
-                print(f"Error occurred while updating the file: {e}")
+                self.notify(f"Error occurred while updating the file: {e}")
         else:
-            print("No number found in the hostname.")
+            self.notify("No number found in the hostname.")
 
-    def start(self):
-        """Start the UI loop."""
-        self.display_ui()
-        self._wait_for_key_press()
+    
 
-    def display_ui(self):
-        """Render the menu interface."""
-        os.system('cls' if os.name == 'nt' else 'clear')
-        border = "*" * self.border_width
-
-        title_line = self._center_text(self.text['title'], 46)
-        hostname_line = self._center_text(f"{self.text['hostname']}: {self.hostname}", 46)
-        device_line = self._center_text(f"{self.text['device']}: {self.device_type}", 46)
-
-        print(f"\n{border}")
-        print(f"* {title_line} *")
-        print(f"* {hostname_line} *")
-        print(f"* {device_line} *")
-        print(f"{border}\n")
-
-        print(f"{self.text['quit']}\n{self.text['language']}\n")
-        for option in self.text['options']:
-            print(option)
-
-        if self.current_menu != 'Jetson':
-            print(f"\n{self.text['back']}")
-
-    def reset_ui(self):
-        """Short delay and refresh UI."""
-        time.sleep(1)
-        self.display_ui()
-
-    def _wait_for_key_press(self):
-        """Main input loop for handling key presses and triggering actions."""
-        while True:
-            key = self._getch()
-            key_lower = key.lower()
-
-            if key_lower == 'q':
-                print(f"\n{self.text['exiting']}")
-                break
-            elif key_lower == 'w':
-                self._switch_language()
-            elif key_lower == 'b' and self.current_menu != 'Jetson':
-                self.current_menu = 'Jetson'
-                self.text = self._load_text()
-                self.display_ui()
-            else:
-                actions = self._get_current_actions()
-                if key in actions:
-                    action = actions[key]
-                    if 'menu' in action:
-                        self.current_menu = action['menu']
-                        self.text = self._load_text()
-                        self.display_ui()
-                    elif 'function' in action:
-                        func = getattr(self.detector, action['function'], None)
-                        print(func)
-                        if callable(func):
-                            option_text = self.text['options'][int(key) - 1].split('. ')[1]
-                            print(f"\n{option_text}: {self.text['running']}")
-                            func()
-                            self.reset_ui()
-
-    def _switch_language(self):
-        """Toggle between English and Chinese UI language."""
-        self.language = 'zh' if self.language == 'en' else 'en'
+    def on_mount(self) -> None:
         self.text = self._load_text()
-        print(f"\n{self.text['language_switched']}")
-        self.display_ui()
+        self.update_ui()
+        self._mounted = True
+
+    def watch_language(self, language: str) -> None:
+        if self._mounted:
+            self.text = self._load_text()
+            self.update_ui()
+
+    def watch_current_menu(self, current_menu: str) -> None:
+        if self._mounted:
+            self.text = self._load_text()
+            self.update_ui()
+
+    
+
+    def update_ui(self) -> None:
+        self.query_one("#title", Label).update(self.text['title'])
+        self.query_one("#hostname", Label).update(f"{self.text['hostname']}: {self.hostname}")
+        self.query_one("#device", Label).update(f"{self.text['device']}: {self.device_type}")
+        self.query_one("#quit_language_info", Label).update("")
+
+        options_container = self.query_one("#options_container", VerticalScroll)
+        
+        # 方法2：完全重建
+        options_container.remove_children()
+        for i, option_text in enumerate(self.text['options']):
+            button = Button(option_text.split('. ', 1)[-1], 
+                        id=f"{self.current_menu}_option_{i+1}",  # 确保唯一性
+                        classes="menu-option")
+            options_container.mount(button)
+        
+        if self.current_menu != 'Jetson':
+            self.query_one("#back_info", Label).update(self.text['back'])
+        else:
+            self.query_one("#back_info", Label).update("")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id and "_option_" in event.button.id:
+            key = event.button.id.split("_option_")[-1]
+            actions = self._get_current_actions()
+            if key in actions:
+                action = actions[key]
+                if 'menu' in action:
+                    self.current_menu = action['menu']
+                elif 'function' in action:
+                    func = getattr(self.detector, action['function'], None)
+                    if callable(func):
+                        self.stop_event = threading.Event()
+                        log_screen = LogScreen(stop_event=self.stop_event)
+                        self.notify(f"LogScreen created: {'OK' if log_screen else 'FAILED'}")
+                        self.push_screen(log_screen)
+                        self.detector.set_log_screen(log_screen)
+                        self.notify(f"Detector log screen set: {'OK' if self.detector._log_screen else 'FAILED'}")
+                        self.run_in_thread(func, stop_event=self.stop_event)
+
+    def action_stop_process(self) -> None:
+        if hasattr(self, 'stop_event') and self.stop_event:
+            self.stop_event.set()
+            self.notify("Stopping process...")
+            self.app.pop_screen()
+            
+
+    def action_quit(self) -> None:
+        self.exit(f"\n{self.text['exiting']}")
+
+    def action_switch_language(self) -> None:
+        self.language = 'zh' if self.language == 'en' else 'en'
+        self.notify(f"{self.text['language_switched']}")
+
+    def action_go_back(self) -> None:
+        if self.current_menu != 'Jetson':
+            self.current_menu = 'Jetson'
 
     def _load_text(self):
         """Load text elements from menu config for the current menu and language."""
@@ -179,25 +252,21 @@ class InspectionUI:
             return "Orangepi"
         return "Unknown"
 
-    def _center_text(self, text, width):
-        """Return text centered with padding; handles double-width characters."""
-        display_width = sum(2 if '\u4e00' <= c <= '\u9fff' else 1 for c in text)
-        if display_width >= width:
-            return text
-        padding = width - display_width
-        return ' ' * (padding // 2) + text + ' ' * (padding - padding // 2)
-
-    def _getch(self):
-        """Read a single character from stdin without echo."""
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-        try:
-            tty.setraw(fd)
-            return sys.stdin.read(1)
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    def run_in_thread(self, func, *args, stop_event=None, **kwargs):
+        def wrapper():
+            try:
+                func(*args, stop_event=stop_event, **kwargs)
+            except Exception as e:
+                logging.error(f"Error in threaded function {func.__name__}: {e}")
+                self.call_from_thread(self.notify, f"Error: {e}")
+            finally:
+                self.call_from_thread(self.app.pop_screen)
+        
+        thread = threading.Thread(target=wrapper)
+        thread.daemon = True
+        thread.start()
 
 if __name__ == "__main__":
     # 默认以中文启动
-    UI = InspectionUI(language='zh')
-    UI.start()
+    app = InspectionUI(language='zh')
+    app.run()

@@ -1,0 +1,76 @@
+/* 全局颜色变量 */
+$background: #1E1E1E; /* 极深灰 */
+$surface: #2D2D2D;    /* 稍浅的深灰，用于面板和容器 */
+$primary: #007ACC;    /* 微软蓝，作为主强调色 */
+$secondary: #005F99;  /* 较深的蓝色，用于悬停效果 */
+$accent: #00BFFF;     /* 天蓝色，作为次强调色或边框 */
+$text: #E0E0E0;       /* 浅灰，用于主要文本 */
+$text-dim: #B0B0B0;   /* 稍暗的浅灰，用于次要文本 */
+$border: #444444;     /* 边框颜色 */
+
+Screen {
+    background: $background;
+    align: center middle;
+}
+
+#main-container {
+    width: 90%;
+    height: 90%;
+    border: thick $accent;
+    background: $surface;
+    padding: 2;
+    align: center middle;
+    layout: vertical;
+}
+
+Header {
+    background: $primary;
+    color: $text;
+}
+
+Footer {
+    background: $primary;
+    color: $text;
+}
+
+Label {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 0; /* 减少底部外边距 */
+    color: $text;
+}
+
+#info {
+    color: $text;
+    background: $primary;
+    padding: 1;
+}
+
+#position, #event {
+    color: $text-dim;
+}
+
+VerticalScroll {
+    height: 3fr; /* 占据更多空间 */
+    padding: 1 2;
+    background: $background;
+    border: round $border;
+    align: center top; /* 使内部内容水平居中，垂直顶部对齐 */
+}
+
+Button {
+    width: 80%;
+    margin: 1 0;
+    background: $primary;
+    color: $text;
+    border: round $primary;
+}
+
+Button:hover {
+    background: $secondary;
+    border: round $secondary;
+}
+
+#output_label {
+    text-align: left;
+}
