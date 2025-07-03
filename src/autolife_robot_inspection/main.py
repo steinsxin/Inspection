@@ -19,7 +19,7 @@ from textual.screen import Screen
 from textual.widgets import Header, Footer, Label, Button
 
 from autolife_robot_inspection import (
-    MODEL_CONFIG_PATH, MENU_CONFIG_PATH, FUNC_CONFIG_PATH
+    MODEL_CONFIG_PATH, MENU_CONFIG_PATH, FUNC_CONFIG_PATH, UI_CSS_PATH
 )
 from autolife_robot_inspection.inspection_detector import InspectionDetector
 
@@ -105,7 +105,7 @@ class LogScreen(Screen):
 
 
 class InspectionUI(App):
-    CSS_PATH = "mouse_interaction.tcss"
+    CSS_PATH = UI_CSS_PATH
     BINDINGS = [
         ("escape", "quit", "Exit"),
         ("w", "switch_language", "Switch Language"),

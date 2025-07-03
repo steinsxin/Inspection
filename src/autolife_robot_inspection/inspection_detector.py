@@ -195,18 +195,17 @@ class InspectionDetector:
                     process.terminate()
                 process.join()
 
-    def _run_integration_test(self, test_name, module_path):
-        if self.ui_callback:
-            self.ui_callback("Press Ctrl+C to exit...\n")
+    def _run_integration_test_with_log(self, test_name, module_path, stop_event=None):
+        manager = multiprocessing.Manager()
+        shared_log = manager.dict()
+        key_queue = multiprocessing.Queue()
 
-        def run_script():
+        def run_script(shared_log, key_queue, stop_event):
+            import sys, os, importlib.util, traceback
+
             try:
                 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 script_path = os.path.join(root_dir, *module_path.split(".")) + ".py"
-                if self.ui_callback:
-                    self.ui_callback(f"[INFO] Running: {script_path}")
-
-                # 将脚本所在目录临时添加到 sys.path
                 script_dir = os.path.dirname(script_path)
                 if script_dir not in sys.path:
                     sys.path.insert(0, script_dir)
@@ -216,24 +215,54 @@ class InspectionDetector:
                 spec.loader.exec_module(test_module)
 
                 if hasattr(test_module, "main"):
-                    test_module.main()
+                    shared_log["log"] = f"[INFO] Running {test_name}...\n"
+
+                    # 如果 main 支持传入 keyboard_input 或 stop_event，可增强交互能力
+                    if "stop_event" in test_module.main.__code__.co_varnames:
+                        test_module.main(stop_event=stop_event, key_queue=key_queue, shared_log=shared_log)
+                    else:
+                        test_module.main()
+                    shared_log["log"] = f"[INFO] {test_name} test completed."
                 else:
-                    if self.ui_callback:
-                        self.ui_callback(f"[ERROR] No 'main()' found in {test_name}")
-            except Exception:
-                if self.ui_callback:
-                    self.ui_callback(f"[ERROR] Exception in {test_name}:")
-                    self.ui_callback(traceback.format_exc())
+                    shared_log["log"] = f"[ERROR] No main() found in {test_name}"
+
+            except Exception as e:
+                shared_log["log"] = f"[ERROR] Exception in {test_name}:\n{traceback.format_exc()}"
+            finally:
+                shared_log["log"] += f"\n[{test_name}] Script stopped."
+
+        stop_event = stop_event or multiprocessing.Event()
+        process = multiprocessing.Process(
+            target=run_script,
+            args=(shared_log, key_queue, stop_event)
+        )
+        process.start()
+
+        input_q = queue.Queue()
+        if self._log_screen:
+            self._log_screen.start_keyboard_capture(input_q)
 
         try:
-            thread = threading.Thread(target=run_script)
-            thread.start()
-            thread.join()
-            if self.ui_callback:
-                self.ui_callback(f"[INFO] {test_name} test finished.")
-        except Exception as e:
-            if self.ui_callback:
-                self.ui_callback(f"[ERROR] Failed to run {test_name} test: {e}")
+            while process.is_alive() and not stop_event.is_set():
+                if "log" in shared_log and self._log_screen:
+                    self._log_screen.set_log(shared_log["log"])
+
+                try:
+                    key = input_q.get_nowait()
+                    key_queue.put(key)
+                except queue.Empty:
+                    pass
+
+                time.sleep(0.1)
+
+        finally:
+            stop_event.set()
+            if process.is_alive():
+                process.terminate()
+            process.join()
+
+            if self._log_screen:
+                self._log_screen.stop_keyboard_capture()
 
 
     ########### ModuleTest ###########
@@ -285,11 +314,11 @@ class InspectionDetector:
 
     ########### IntegrationTest ###########
 
-    def AutolifeTest(self):
-        self._run_integration_test("AutolifeTest", "autolife_robot_inspection.IntegrationTest.AutolifeTest.main")
+    def AutolifeTest(self, stop_event=None):
+        self._run_integration_test_with_log("AutolifeTest", "autolife_robot_inspection.integration_test.AutolifeTest.main", stop_event=None)
 
-    def Car_movement(self):
-        self._run_integration_test("Car_movement", "autolife_robot_inspection.IntegrationTest.Car_movement.main")
+    def Car_movement(self, stop_event=None):
+        self._run_integration_test_with_log("Car_movement", "autolife_robot_inspection.integration_test.Car_movement.main", stop_event=None)
 
     def Welcome_guests(self):
         time.sleep(1)

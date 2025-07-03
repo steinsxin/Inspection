@@ -1,6 +1,6 @@
 {
   "robot_version": "robot_v1_0",
-  "ROS_DOMAIN_ID": 100,
+  "ROS_DOMAIN_ID": 108,
   "motor": {
     "ENABLED_MODULES": [
       "mod_motor_left_arm",
