@@ -8,17 +8,18 @@ import subprocess
 import sys
 
 import time
+import queue
 
 import traceback
 import threading
 import importlib.util
 from datetime import datetime
 
-from autolife_robot_inspection.ModuleTest import (
+from autolife_robot_inspection.module_test import (
     AudioDetector, BatteryDetector, MotorDetector, CameraDetector, LidarDetector,
     IMUDetector, HardwareDetector, InternalDetector, WifiDetector
 )
-from autolife_robot_inspection.OtherFunc import (
+from autolife_robot_inspection.otherfunc import (
     RemoteScriptManager
 )
 from autolife_robot_inspection import MODEL_CONFIG_PATH, MENU_CONFIG_PATH, FUNC_CONFIG_PATH
@@ -49,99 +50,150 @@ class InspectionDetector:
 
     def _run_direct_log_detector(self, DetectorClass, stop_event=None):
         """
-        Runs a detector synchronously, fetches log, and optionally waits until stop_event is set.
-        Used for detectors like WifiDetector and HardwareDetector that run directly and produce logs.
+        多进程运行 detector（用于 WifiDetector、HardwareDetector 等直接运行的模块），
+        实时刷新 log_screen，支持键盘交互。
         """
+        manager = multiprocessing.Manager()
+        shared_log = manager.dict()
+        key_queue = multiprocessing.Queue()
+
+        def run_detector(shared_log, key_queue, stop_event):
+
+            try:
+                detector = DetectorClass(self.model_config)
+                shared_log["log"] = detector.get_log()
+
+                while not stop_event.is_set():
+                    if not key_queue.empty():
+                        key = key_queue.get()
+                        detector.get_keyboard_data(key)
+
+                    shared_log["log"] = detector.get_log()
+                    detector.run()
+        
+            except Exception as e:
+                error_msg = f"Error during {DetectorClass.__name__} detection: {e}"
+                shared_log["log"] = error_msg
+            finally:
+                shared_log["log"] = f"[{DetectorClass.__name__}] Detector stopped."
+
+        stop_event = stop_event or multiprocessing.Event()
+        process = multiprocessing.Process(
+            target=run_detector,
+            args=(shared_log, key_queue, stop_event)
+        )
+        process.start()
+
+        input_q = queue.Queue()
+        if self._log_screen:
+            self._log_screen.start_keyboard_capture(input_q)
+
         try:
-            detector = DetectorClass(self.model_config)
-            log_content = detector.get_log()
-            if self._log_screen:
-                self._log_screen.append_log(log_content)
-
-            if stop_event:
-                import queue
-                input_q = queue.Queue()
-
-                if self._log_screen:
-                    self._log_screen.start_keyboard_capture(input_q)
+            while process.is_alive() and not stop_event.is_set():
+                if "log" in shared_log and self._log_screen:
+                    self._log_screen.set_log(shared_log["log"])
 
                 try:
-                    while not stop_event.is_set():
-                        try:
-                            key = input_q.get_nowait()
-                            if self._log_screen:
-                                self._log_screen.append_log(f"Received command: {key}")
+                    key = input_q.get_nowait()
+                    key_queue.put(key)
+                except queue.Empty:
+                    pass
 
-                        except queue.Empty:
-                            pass
-                        time.sleep(0.1)
-                finally:
-                    if self._log_screen:
-                        self._log_screen.stop_keyboard_capture()
+                time.sleep(0.1)
 
-        except Exception as e:
+        finally:
+            stop_event.set()  # 通知子进程退出
+            if process.is_alive():
+                process.terminate()
+            process.join()
+            
             if self._log_screen:
-                self._log_screen.append_log(
-                    f"Error during {DetectorClass.__name__} detection: {e}"
-                )
+                self._log_screen.stop_keyboard_capture()
 
-
-    def _module_detection(self, module_list, module_type, detector_class, check_func_name, parse_result):
-        if self.ui_callback:
-            self.ui_callback(f"Press Ctrl+C to stop {module_type.lower()} module detection...\n")
+    def _module_detection(self, module_list, module_type, detector_class,
+                        check_func_name, parse_result, stop_event=None):
 
         manager = multiprocessing.Manager()
         shared_log = manager.dict()
         all_results = []
 
+        full_log = ""  # 维护完整追加日志
+        last_log = ""  # 记录上一次 shared_log["log"]，方便追加增量
+
+        def detect_module(shared, module):
+            try:
+                shared["log"] = f"{module} Checking..."
+                detector = detector_class(self.model_config)
+                getattr(detector, check_func_name)(module)
+                shared['result'] = parse_result(detector, module)
+                shared["log"] = f"{module} Detection completed.\n"
+            except Exception as e:
+                shared["log"] = f"{module} Detection failed: {e}"
+                shared['result'] = (module, f"Detection failed: {e}")
+            time.sleep(0.5)
+
         try:
             for module in module_list:
-                try:
-                    time.sleep(0.1)
-                except KeyboardInterrupt:
-                    if self.ui_callback:
-                        self.ui_callback("\nUser stopped detection via Ctrl+C.\n")
-                    break
-
+                time.sleep(0.1)
                 shared_log.clear()
-                if self.ui_callback:
-                    self.ui_callback(f"Detecting {module_type.lower()} module: {module}")
+                shared_log["log"] = f"Detecting {module_type.lower()} module: {module}..."
 
-                def detect(shared):
-                    try:
-                        detector = detector_class(self.model_config)
-                        getattr(detector, check_func_name)(module)
-                        shared['result'] = parse_result(detector, module)
-                    except Exception as e:
-                        shared['result'] = (module, f"Detection failed: {e}")
-
-                process = multiprocessing.Process(target=detect, args=(shared_log,))
+                process = multiprocessing.Process(target=detect_module,
+                                                args=(shared_log, module))
                 process.start()
-                process.join(timeout=15)
+
+                start_time = time.time()
+                while process.is_alive() and time.time() - start_time < 15:
+                    time.sleep(0.2)
+                    if "log" in shared_log:
+                        current_log = shared_log["log"]
+                        if current_log != last_log:
+                            full_log += current_log + "\n"
+                            last_log = current_log
+                        if self._log_screen:
+                            self._log_screen.set_log(full_log)
 
                 if process.is_alive():
                     process.terminate()
                     process.join()
+                    timeout_msg = f"[{module}] Timeout after 15s"
                     shared_log['result'] = (module, "Timeout after 15s")
+                    shared_log['log'] = timeout_msg
+                    full_log += timeout_msg + "\n"
+                    if self._log_screen:
+                        self._log_screen.set_log(full_log)
 
                 all_results.append(shared_log.get('result'))
 
-                if self.ui_callback:
-                    self.ui_callback(f"Module {module} detection completed.\n")
-
         except Exception as e:
-            if self.ui_callback:
-                self.ui_callback(f"[ERROR] {module_type} detection error: {e}")
+            error_msg = f"[ERROR] {module_type} detection error: {e}"
+            full_log += error_msg + "\n"
+            if self._log_screen:
+                self._log_screen.set_log(full_log)
 
         finally:
-            if self.ui_callback:
-                self.ui_callback(f"\n {module_type} Detection Results\n" + "-" * 40)
-                self.ui_callback("{:<20} | {:<20}".format("Module", "Status"))
-                self.ui_callback("-" * 21 + "|" + "-" * 20)
-                for name, status in all_results:
-                    self.ui_callback("{:<20} | {:<20}".format(
-                        name.replace("mod_camera_", "").replace("mod_motor_", ""), status
-                    ))
+            result_log = [
+                f"\n{module_type} Detection Results",
+                "-" * 40,
+                "{:<20} | {:<20}".format("Module", "Status"),
+                "-" * 21 + "|" + "-" * 20
+            ]
+            for name, status in all_results:
+                clean_name = name.replace("mod_camera_", "").replace("mod_motor_", "")
+                result_log.append("{:<20} | {:<20}".format(clean_name, status))
+
+            final_log = "\n".join(result_log)
+            full_log += final_log + "\n"
+
+            try:
+                while stop_event is None or not stop_event.is_set():
+                    if self._log_screen:
+                        self._log_screen.set_log(full_log)
+                    time.sleep(0.1)
+            finally:
+                if process.is_alive():
+                    process.terminate()
+                process.join()
 
     def _run_integration_test(self, test_name, module_path):
         if self.ui_callback:
@@ -186,7 +238,7 @@ class InspectionDetector:
 
     ########### ModuleTest ###########
 
-    def motor_module_detection(self):
+    def motor_module_detection(self, stop_event=None):
         detector = MotorDetector(self.model_config)
         motor_modules = detector.config['motor']['ENABLED_MODULES']
         self._module_detection(
@@ -194,10 +246,11 @@ class InspectionDetector:
             module_type="Motor",
             detector_class=MotorDetector,
             check_func_name="_check_single",
-            parse_result=lambda det, mod: (mod.replace("mod_motor_", ""), det.get_log().strip())
+            parse_result=lambda det, mod: (mod.replace("mod_motor_", ""), det.get_log().strip()),
+            stop_event=stop_event
         )
 
-    def visual_module_detection(self):
+    def visual_module_detection(self, stop_event=None):
         detector = CameraDetector(self.model_config)
         camera_modules = detector.config['camera']['ENABLED_MODULES']
         self._module_detection(
@@ -205,7 +258,8 @@ class InspectionDetector:
             module_type="Camera",
             detector_class=CameraDetector,
             check_func_name="_check_single",
-            parse_result=lambda det, mod: det.log_buffer[-1] if det.log_buffer else (mod.replace("mod_camera_", ""), "No result")
+            parse_result=lambda det, mod: det.log_buffer[-1] if det.log_buffer else (mod.replace("mod_camera_", ""), "No result"),
+            stop_event=stop_event
         )
 
     def audio_module_detection(self, stop_event=None):

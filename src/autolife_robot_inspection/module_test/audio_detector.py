@@ -62,9 +62,9 @@ class AudioDetector(DeviceInterface):
         }
 
     def get_keyboard_data(self, keyboard_data):
-        if keyboard_data == '+':
+        if keyboard_data == 'plus':
             self.volume_control(change=5)  # Increase volume by 5%
-        elif keyboard_data == '-':
+        elif keyboard_data == 'minus':
             self.volume_control(change=-5)  # Decrease volume by 5%
 
         return None
@@ -116,11 +116,14 @@ class AudioDetector(DeviceInterface):
                 self.volume_control(change=-5)  # Decrease volume by 5%
 
 if __name__ == "__main__":
-    detector = AudioDetector()
+    path = "../../configs/model_config.json"
+    with open(path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    detector = AudioDetector(config)
     print(detector.log)
     
     # Start interactive volume control
-    detector.interactive_volume_control()
+    # detector.interactive_volume_control()
     
     try:
         while True:

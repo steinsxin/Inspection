@@ -26,8 +26,8 @@ from autolife_robot_inspection.inspection_detector import InspectionDetector
 
 class LogScreen(Screen):
     BINDINGS = [
-        ("b", "app.pop_screen", "Back"),
-        ("escape", "app.pop_screen", "Back"),
+        ("b", "stop_process", "Back"),
+        ("escape", "stop_process", "Back"),
     ]
 
     log_content = reactive("")
@@ -38,6 +38,8 @@ class LogScreen(Screen):
         self.capturing_keyboard = False
         self.input_queue = None
         self.input_buffer = []
+        self._external_log = ""  # 外部设置的最新日志内容
+        self._log_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -47,15 +49,28 @@ class LogScreen(Screen):
             yield Label("", id="input_line_label")
         yield Footer()
 
+    def on_mount(self) -> None:
+        # 每 0.5 秒刷新一次 log_content
+        self._log_timer = self.set_interval(0.5, self.refresh_log)
+        
+    def on_unmount(self) -> None:
+        if self._log_timer:
+            self._log_timer.stop()
+
+    def refresh_log(self):
+        """定时器回调函数：从外部缓存更新到 log_content，触发 watch。"""
+        self.log_content = self._external_log
+
+    def set_log(self, full_log: str) -> None:
+        """由外部调用，设置新的完整日志内容。"""
+        self._external_log = full_log
+
     def watch_log_content(self, old: str, new: str) -> None:
         try:
             self.query_one("#output_label").update(new)
             self.query_one("#output_scroll").scroll_end()
         except NoMatches:
-            pass
-
-    def append_log(self, message: str) -> None:
-        self.log_content = f"{self.log_content}\n{message}"
+            pass    
 
     def on_key(self, event: 'Key') -> None:
         if self.capturing_keyboard and self.input_queue:
@@ -86,8 +101,7 @@ class LogScreen(Screen):
         if self.stop_event:
             self.stop_event.set()
             self.notify("Stopping inspection...")
-            self.app.pop_screen()
-
+        self.app.pop_screen() 
 
 
 class InspectionUI(App):
@@ -108,7 +122,7 @@ class InspectionUI(App):
     def __init__(self, language="zh", *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.language = language
-        self.hostname = "NX-100"
+        self.hostname = socket.gethostname()
         self.device_type = self._detect_device_type()
         self.detector = InspectionDetector(language)
         self.menu_config = self._load_json_config(MENU_CONFIG_PATH)
