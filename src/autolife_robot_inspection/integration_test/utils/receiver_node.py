@@ -2,6 +2,8 @@
 import json
 import pickle
 import time
+import socket
+import threading
 from typing import List, Tuple, Any
 
 import rclpy
@@ -9,136 +11,98 @@ from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 
-from autolife_robot_sdk.utils import get_wifi_mac_address
+from autolife_robot_sdk.utils import get_wifi_mac_address, get_mac_from_ip
 
-DEVICE_ID = get_wifi_mac_address("enP8p1s0").replace(":", "")
-print(DEVICE_ID)
+def _get_device_id() -> str:
+    """Determine DEVICE_ID based on device type (NX or other)."""
+    device_id = "00000000"
+    hostname = socket.gethostname().upper()
+    if "NX" in hostname:
+        device_id = get_wifi_mac_address("enP8p1s0")
+    else:
+        device_id = get_mac_from_ip("192.168.10.2")
 
-class ServerSubscriber(Node):
+    return device_id
+
+DEVICE_ID = _get_device_id()
+print(f"DEVICE_ID: {DEVICE_ID}")
+
+class ReceiverNode(Node):
     def __init__(self, stop_event=None):
-        """Initialize the ROS2 server subscriber node."""
-        super().__init__('server_subscriber' + DEVICE_ID)
+        super().__init__('inspection_receiver_' + DEVICE_ID)
+
+        # battery percent
+        self.battery_percent = -1
 
         # Module status flags
-        self.imu = False
-        self.imu_received_time = 0
+        self.is_imu_live = False
         self.is_battery_live = False
-        self.rplidar_front = False
-        self.rplidar_back = False
+        self.is_rplidar_front_live = False
+        self.is_rplidar_back_live = False
+
+        # Timestamps
+        self.imu_received_time = 0
+        self.battery_received_time = 0
         self.rplidar_front_received_time = 0
         self.rplidar_back_received_time = 0
 
-        # Module data display flags and storage
+        # Flags to indicate whether to print data for each module
         self.imu_data_show = False
         self.battery_date_show = False
-        self.battery_percent = -1
         self.rplidar_front_data_show = False
         self.rplidar_back_data_show = False
 
-        # IMU data subscription
+        # Subscriptions
         self.imu_subscription = self.create_subscription(
             String,
-            'gv_imu_' + DEVICE_ID,
+            f'gv_imu_{DEVICE_ID}',
             self.imu_callback,
             10
         )
 
-        # Battery data subscription
         self.battery_subscription = self.create_subscription(
             String,
-            'gv_battery_' + DEVICE_ID,
+            f'gv_battery_{DEVICE_ID}',
             self.battery_callback,
             10
         )
 
-        # Rear lidar data subscription
         self.rplidar_back_subscription = self.create_subscription(
             LaserScan,
-            'gv_rear_lidar_' + DEVICE_ID,
+            f'gv_rear_lidar_{DEVICE_ID}',
             self.rplidar_back_callback,
             10
         )
 
-        # Front lidar data subscription
         self.rplidar_front_subscription = self.create_subscription(
             LaserScan,
-            'gv_front_lidar_' + DEVICE_ID,
+            f'gv_front_lidar_{DEVICE_ID}',
             self.rplidar_front_callback,
             10
         )
 
-        self.publisher = self.create_publisher(String, "control_topic_" + DEVICE_ID, 10)
-        self.control_reset_pub = self.create_publisher(String, "control_reset_" + DEVICE_ID, 10)
+        # Start status monitor thread
+        self.check_thread = threading.Thread(target=self._status_monitor_loop, daemon=True)
+        self.check_thread.start()
 
-    def control_reset(self) -> None:
-        """Publish a control reset message."""
-        msg = String()
-        json_msg = {"type": "control_reset", "status": "async"}
-        msg.data = json.dumps(json_msg)
-        self.control_reset_pub.publish(msg)
-
-    def replay(self, filepath: str) -> None:
-        """Replay messages from a recorded pickle file.
+    def _status_monitor_loop(self, check_interval: float = 1.0, timeout: float = 5.0) -> None:
+        """
+        Background thread that periodically checks whether sensor modules are still active.
 
         Args:
-            filepath: Path to the pickle file containing recorded messages.
+            check_interval (float): Time interval (in seconds) between checks.
+            timeout (float): Duration (in seconds) after which a module is considered offline if no data is received.
         """
-        msg_list = self.load_pickle(filepath)
-        if msg_list:
-            self.replay_messages(msg_list)
+        while rclpy.ok():
+            current_time = time.time()
 
-    def load_pickle(self, filepath: str) -> List[Tuple[float, str]]:
-        """Load message data from a pickle file.
+            # Determine if each module is still active based on last received timestamp
+            self.is_imu_live = (current_time - self.imu_received_time) < timeout
+            self.is_battery_live = (current_time - self.battery_received_time) < timeout
+            self.is_rplidar_front_live = (current_time - self.rplidar_front_received_time) < timeout
+            self.is_rplidar_back_live = (current_time - self.rplidar_back_received_time) < timeout
 
-        Args:
-            filepath: Path to the pickle file.
-
-        Returns:
-            List of tuples containing (timestamp, message_data).
-        """
-        try:
-            with open(filepath, 'rb') as f:
-                data = pickle.load(f)
-                self.get_logger().info(f"Successfully loaded recording: {filepath}")
-                return data
-        except Exception as e:
-            self.get_logger().error(f"Failed to load recording: {e}")
-            return []
-
-    def replay_messages(self, msg_list: List[Tuple[float, str]]) -> None:
-        """Replay messages with original timing.
-
-        Args:
-            msg_list: List of tuples containing (timestamp, message_data).
-        """
-        prev_time = 0.0
-        start_time = time.time()
-
-        self.get_logger().info("Arm Test Start")
-        for index, item in enumerate(msg_list):
-            current_time, msg_data = item
-
-            # Calculate wait time
-            wait_time = current_time if index == 0 else current_time - prev_time
-
-            wait_time_start = time.time()
-            while time.time() - wait_time_start < wait_time:
-                time.sleep(0.001)
-
-            # Publish message
-            msg = String()
-            try:
-                command = json.loads(msg_data)
-                command['ts'] = time.time() * 1000
-                msg.data = json.dumps(command)
-                self.publisher.publish(msg)
-            except json.JSONDecodeError as e:
-                self.get_logger().error(f"Failed to decode JSON: {e}")
-                continue
-
-            prev_time = current_time
-
-        self.get_logger().info("Replay completed")
+            time.sleep(check_interval)
 
     def imu_callback(self, msg: String) -> None:
         """Callback for IMU data.
@@ -146,7 +110,6 @@ class ServerSubscriber(Node):
         Args:
             msg: Received IMU message.
         """
-        self.imu = True
         self.imu_received_time = time.time()
 
         if self.imu_data_show:
@@ -158,7 +121,7 @@ class ServerSubscriber(Node):
         Args:
             msg: Received battery message.
         """
-        self.is_battery_live = True
+        self.battery_received_time = time.time()
         bat = json.loads(msg.data)
         self.battery_percent = bat['capacity_percentage']
 
@@ -188,7 +151,6 @@ class ServerSubscriber(Node):
         Args:
             msg: Received LaserScan message from rear lidar.
         """
-        self.rplidar_back = True
         self.rplidar_back_received_time = time.time()
 
         if self.rplidar_front_data_show:
@@ -205,7 +167,6 @@ class ServerSubscriber(Node):
         Args:
             msg: Received LaserScan message from front lidar.
         """
-        self.rplidar_front = True
         self.rplidar_front_received_time = time.time()
 
         if self.rplidar_back_data_show:
@@ -217,28 +178,34 @@ class ServerSubscriber(Node):
             )
 
     def status_info(self) -> None:
-        """Log the current status of all modules."""
-        self.get_logger().info(
+        """Return the current status of all modules as a formatted string."""
+        return (
             f"""
             ----------------------------------------
             | Module Name       | Status           |
             ----------------------------------------
-            | IMU Module        | {self.imu:<16} |
-            | Battery Module    | {self.is_battery_live:<16} |
-            | Front Lidar       | {self.rplidar_front:<16} |
-            | Rear Lidar        | {self.rplidar_back:<16} |
+            | IMU Module        | {self.is_imu_live!s:<16} |
+            | Battery Module    | {self.is_battery_live!s:<16} |
+            | Front Lidar       | {self.is_rplidar_front_live!s:<16} |
+            | Rear Lidar        | {self.is_rplidar_back_live!s:<16} |
             ----------------------------------------
             """
         )
 
-
 def main(args=None):
-    """Main function to initialize and run the ROS2 node."""
+    """Main function to initialize and run the ROS 2 node."""
     rclpy.init(args=args)
-    node = ServerSubscriber()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    node = ReceiverNode()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info("Keyboard interrupt received. Shutting down...")
+    except Exception as e:
+        node.get_logger().error(f"Unhandled exception: {e}")
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':

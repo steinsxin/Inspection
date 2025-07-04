@@ -277,7 +277,7 @@ class InspectionUI(App):
             return "Jetson NX"
         if "NANO" in upper_hostname:
             return "Jetson NANO"
-        if "ORANGEPI" in upper_hostname:
+        if "ORANGEPI" in upper_hostname or "PI" in upper_hostname:
             return "Orangepi"
         return "Unknown"
 

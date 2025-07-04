@@ -18,7 +18,7 @@ from rclpy.node import Node
 from rclpy.executors import ExternalShutdownException
 
 from autolife_robot_inspection import MODEL_CONFIG_PATH, ONNX_ROOT, PKL_ROOT
-from autolife_robot_inspection.integration_test.utils import PiperVoice, ServerSubscriber
+from autolife_robot_inspection.integration_test.utils import PiperVoice, PublisherNode, ReceiverNode
 
 with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
     from autolife_robot_sdk.hardware.hw_api import HWAPI as RobotInterface
@@ -39,8 +39,8 @@ class AutolifeTest:
         self.camera_model = self.model_config['camera']['ENABLED_MODULES']
         self.audio_model = self.model_config['audio']['ENABLED_MODULES']
         self.all_model = self.camera_model + self.audio_model
-        self.onnx_path = os.path.join(ONNX_ROOT, 'zh_CN-huayan-medium.onnx')
         self.robot_api = RobotInterface()
+        self.piper_voice = PiperVoice(self.robot_api, f"{ONNX_ROOT}/zh_CN-huayan-medium.onnx")
         self.save_dir = save_dir
         self.shared_log = shared_log
         self.camera_names = {
@@ -65,15 +65,15 @@ class AutolifeTest:
         self.robot_api.initialize(self.all_model)
 
     def check_and_log(self, condition: bool, success_msg: str, failure_msg: str):
-            """Helper to check condition and log/play voice."""
-            if condition:
-                PiperVoice.play_voice(success_msg)
-                self.shared_log['log'] += f"{success_msg}\n"
-            else:
-                PiperVoice.play_voice(failure_msg)
-                self.shared_log['log'] += f"{failure_msg}\n"
+        """Helper to check condition and log/play voice."""
+        if condition:
+            self.piper_voice.play_voice(success_msg)
+            self.shared_log['log'] += f"{success_msg}\n"
+        else:
+            self.piper_voice.play_voice(failure_msg)
+            self.shared_log['log'] += f"{failure_msg}\n"
 
-    def check_task(self, number: int, node: ServerSubscriber, stop_event=None) -> None:
+    def check_task(self, number: int, pub_node: PublisherNode, rev_node: ReceiverNode, stop_event=None) -> None:
         """Perform all hardware checks and voice announcements."""
         buffer = io.StringIO()
         with redirect_stdout(buffer):
@@ -96,38 +96,37 @@ class AutolifeTest:
             return
         
         # Check battery status
-        # check_and_log(node.is_battery_live,
-        #     f"电源模块就绪, 当前电量 {node.battery_percent}",
-        #     "电源模块丢失"
-        # )
-        # if stop_event.is_set():
-        #     return
+        self.check_and_log(rev_node.is_battery_live,
+            f"电源模块就绪, 当前电量 {rev_node.battery_percent}",
+            "电源模块丢失"
+        )
+        if stop_event.is_set():
+            return
 
-        # # Check IMU status
-        # check_and_log(time.time() - node.imu_received_time < 3,
-        #     "陀螺仪模块就绪",
-        #     "陀螺仪模块丢失"
-        # )
-        # if stop_event.is_set():
-        #     return
+        # Check IMU status
+        self.check_and_log(rev_node.is_imu_live,
+            "陀螺仪模块就绪",
+            "陀螺仪模块丢失"
+        )
+        if stop_event.is_set():
+            return
 
-        # # Check lidar status
-        # check_and_log(
-        #     time.time() - node.rplidar_front_received_time < 3 and
-        #     time.time() - node.rplidar_back_received_time < 3,
-        #     "激光雷达模块就绪",
-        #     "激光雷达模块就绪"
-        # )
-        # if stop_event.is_set():
-        #     return
+        # Check lidar status
+        self.check_and_log(
+            rev_node.is_rplidar_front_live and rev_node.is_rplidar_back_live,
+            "激光雷达模块就绪",
+            "激光雷达模块丢失"
+        )
+        if stop_event.is_set():
+            return
 
-        # piper_voice.play_voice("手臂测试开始")
-        # self.shared_log['log'] += "手臂测试开始"
-        # node.replay(f"{PKL_ROOT}/command_full2.pkl")
-        # piper_voice.play_voice("手臂测试结束")
-        # self.shared_log['log'] += "手臂测试结束"
-        # if stop_event.is_set():
-        #     return
+        self.piper_voice.play_voice("手臂测试开始")
+        self.shared_log['log'] += "手臂测试开始"
+        pub_node.replay(f"{PKL_ROOT}/command_full2.pkl")
+        self.piper_voice.play_voice("手臂测试结束")
+        self.shared_log['log'] += "手臂测试结束"
+        if stop_event.is_set():
+            return
 
     def capture_and_save_images(self):
         if not os.path.exists(self.save_dir):
@@ -140,13 +139,13 @@ class AutolifeTest:
                 simple_name = camera_name.removeprefix("mod_camera_")
                 image = None
 
-                # 使用线程池 + 超时机制防止阻塞
+                # Using thread pool and timeout mechanism to prevent blocking
                 try:
                     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                         future = executor.submit(self.robot_api.get_camera_image, simple_name)
                         image = future.result(timeout=3.0)
 
-                        time.sleep(0.1)  # 再试一次
+                        time.sleep(0.1)  # try again
                         future = executor.submit(self.robot_api.get_camera_image, simple_name)
                         image = future.result(timeout=3.0)
 
@@ -157,7 +156,7 @@ class AutolifeTest:
                     self.shared_log['log'] += f"{camera_name} 获取图像失败: {str(e)}\n"
                     continue
 
-                # 保存图像
+                # Save Image
                 if isinstance(image, dict):
                     color_ = image['color']
                     depth_ = image['depth']
@@ -179,25 +178,34 @@ class AutolifeTest:
             self.shared_log['log'] += f"  {chinese_name}: {'正常' if status else '异常'}\n"
 
         if all(self.vision_status.values()):
-            self.robot_api.play_voice("视觉模块就绪")
+            self.piper_voice.play_voice("视觉模块就绪")
             self.shared_log['log'] += "视觉模块就绪\n"
 
     def run(self, args=None, stop_event=None) -> None:
         """Main function to initialize and run the ROS2 node."""
         rclpy.init(args=args)
-        node = ServerSubscriber(stop_event)
+        
+        pub_node = PublisherNode(stop_event)
+        rev_node = ReceiverNode(stop_event)
+
+        executor = rclpy.executors.MultiThreadedExecutor()
+        executor.add_node(pub_node)
+        executor.add_node(rev_node)
 
         # Start the check task in a separate thread
-        timer_thread = threading.Thread(target=self.check_task, args=(1, node, stop_event,))
-        timer_thread.daemon = True  # Set as daemon thread
-        timer_thread.start()
+        check_task_thread = threading.Thread(target=self.check_task, args=(1, pub_node, rev_node, stop_event,))
+        check_task_thread.daemon = True  # Set as daemon thread
+        check_task_thread.start()
 
         try:
             while rclpy.ok() and not stop_event.is_set():
-                rclpy.spin_once(node, timeout_sec=0.1)
+                executor.spin_once(timeout_sec=0.1)
+        except (KeyboardInterrupt, ExternalShutdownException):
+            print("Quit by interrupt")
         finally:
-            timer_thread.join()
-            node.destroy_node()
+            check_task_thread.join()
+            pub_node.destroy_node()
+            rev_node.destroy_node()
             rclpy.shutdown()
         
 def main(stop_event=None, key_queue=None, shared_log=None):

@@ -9,7 +9,13 @@ with redirect_stdout(io.StringIO()):
         PiperVoice = None
 
     try:
-        from .ros_server import ServerSubscriber
+        from .publisher_node import PublisherNode
     except ImportError:
-        print("Failed to import ServerSubscriber. Make sure you have the required dependencies installed.")
-        PiperVoice = None
+        print("Failed to import PublisherNode. Make sure you have the required dependencies installed.")
+        PublisherNode = None
+
+    try:
+        from .receiver_node import ReceiverNode
+    except ImportError:
+        print("Failed to import ReceiverNode. Make sure you have the required dependencies installed.")
+        ReceiverNode = None
