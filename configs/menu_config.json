@@ -23,8 +23,7 @@
       ],
       "IntegrationTest": [
         "1. Autolifetest",
-        "2. Car_movement",
-        "3. Welcome_guests"
+        "2. Car_movement"
       ],
       "NetworkTest": [
         "1. Internal network test",
@@ -60,8 +59,7 @@
       ],
       "IntegrationTest": [
         "1. Autolifetest",
-        "2. Car_movement",
-        "3. Welcome_guests"
+        "2. Car_movement"
       ],
       "NetworkTest": [
         "1. 内网测试",

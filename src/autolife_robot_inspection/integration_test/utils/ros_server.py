@@ -15,7 +15,7 @@ DEVICE_ID = get_wifi_mac_address("enP8p1s0").replace(":", "")
 print(DEVICE_ID)
 
 class ServerSubscriber(Node):
-    def __init__(self):
+    def __init__(self, stop_event=None):
         """Initialize the ROS2 server subscriber node."""
         super().__init__('server_subscriber' + DEVICE_ID)
 

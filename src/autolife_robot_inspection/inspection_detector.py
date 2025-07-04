@@ -48,7 +48,7 @@ class InspectionDetector:
             logging.error(f"Failed to load config '{path}': {e}")
             raise
 
-    def _run_direct_log_detector(self, DetectorClass, stop_event=None):
+    def _run_detector(self, DetectorClass, stop_event=None):
         """
         多进程运行 detector（用于 WifiDetector、HardwareDetector 等直接运行的模块），
         实时刷新 log_screen，支持键盘交互。
@@ -195,7 +195,7 @@ class InspectionDetector:
                     process.terminate()
                 process.join()
 
-    def _run_integration_test_with_log(self, test_name, module_path, stop_event=None):
+    def _run_integration_test(self, test_name, module_path, stop_event=None):
         manager = multiprocessing.Manager()
         shared_log = manager.dict()
         key_queue = multiprocessing.Queue()
@@ -215,26 +215,25 @@ class InspectionDetector:
                 spec.loader.exec_module(test_module)
 
                 if hasattr(test_module, "main"):
-                    shared_log["log"] = f"[INFO] Running {test_name}...\n"
-
-                    # 如果 main 支持传入 keyboard_input 或 stop_event，可增强交互能力
+                    shared_log["log"] = f"Running {test_name}...\n"
+                    # 如果 main 支持传入 keyboard_input 或 stop_event, 可增强交互能力
                     if "stop_event" in test_module.main.__code__.co_varnames:
                         test_module.main(stop_event=stop_event, key_queue=key_queue, shared_log=shared_log)
                     else:
                         test_module.main()
-                    shared_log["log"] = f"[INFO] {test_name} test completed."
+                    shared_log["log"] += f"{test_name} test completed."
                 else:
-                    shared_log["log"] = f"[ERROR] No main() found in {test_name}"
-
+                    shared_log["log"] += f"No main() found in {test_name}"
+        
             except Exception as e:
-                shared_log["log"] = f"[ERROR] Exception in {test_name}:\n{traceback.format_exc()}"
+                shared_log["log"] = f"Exception in {test_name}:\n{traceback.format_exc()}"
             finally:
                 shared_log["log"] += f"\n[{test_name}] Script stopped."
 
         stop_event = stop_event or multiprocessing.Event()
         process = multiprocessing.Process(
             target=run_script,
-            args=(shared_log, key_queue, stop_event)
+            args=(shared_log, key_queue, stop_event, log_file_path)
         )
         process.start()
 
@@ -292,33 +291,33 @@ class InspectionDetector:
         )
 
     def audio_module_detection(self, stop_event=None):
-        self._run_direct_log_detector(AudioDetector, stop_event)
+        self._run_detector(AudioDetector, stop_event)
 
     def lidar_module_detection(self, stop_event=None):
-        self._run_direct_log_detector(LidarDetector, stop_event)
+        self._run_detector(LidarDetector, stop_event)
 
     def battery_module_detection(self, stop_event=None):
-        self._run_direct_log_detector(BatteryDetector, stop_event)
+        self._run_detector(BatteryDetector, stop_event)
 
     def imu_module_detection(self, stop_event=None):
-        self._run_direct_log_detector(IMUDetector, stop_event)
+        self._run_detector(IMUDetector, stop_event)
 
     def hardware_info(self, stop_event=None):
-        self._run_direct_log_detector(HardwareDetector, stop_event)
+        self._run_detector(HardwareDetector, stop_event)
 
     def internal_network_test(self, stop_event=None):
-        self._run_direct_log_detector(InternalDetector, stop_event)
+        self._run_detector(InternalDetector, stop_event)
 
     def wifi_test(self, stop_event=None):
-        self._run_direct_log_detector(WifiDetector, stop_event)
+        self._run_detector(WifiDetector, stop_event)
 
     ########### IntegrationTest ###########
 
     def AutolifeTest(self, stop_event=None):
-        self._run_integration_test_with_log("AutolifeTest", "autolife_robot_inspection.integration_test.AutolifeTest.main", stop_event=None)
+        self._run_integration_test("AutolifeTest", "autolife_robot_inspection.integration_test.autolife_test", stop_event)
 
     def Car_movement(self, stop_event=None):
-        self._run_integration_test_with_log("Car_movement", "autolife_robot_inspection.integration_test.Car_movement.main", stop_event=None)
+        self._run_integration_test("Car_movement", "autolife_robot_inspection.integration_test.car_movement", stop_event)
 
     def Welcome_guests(self):
         time.sleep(1)
