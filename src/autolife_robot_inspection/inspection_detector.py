@@ -233,7 +233,7 @@ class InspectionDetector:
         stop_event = stop_event or multiprocessing.Event()
         process = multiprocessing.Process(
             target=run_script,
-            args=(shared_log, key_queue, stop_event, log_file_path)
+            args=(shared_log, key_queue, stop_event)
         )
         process.start()
 

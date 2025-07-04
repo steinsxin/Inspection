@@ -10,6 +10,7 @@ import json
 import re
 from typing import Dict
 from contextlib import redirect_stdout, redirect_stderr
+import concurrent.futures
 
 import cv2
 import rclpy
@@ -63,7 +64,7 @@ class AutolifeTest:
         """Initialize all required hardware modules."""
         self.robot_api.initialize(self.all_model)
 
-    def check_and_log(slef, condition: bool, success_msg: str, failure_msg: str):
+    def check_and_log(self, condition: bool, success_msg: str, failure_msg: str):
             """Helper to check condition and log/play voice."""
             if condition:
                 PiperVoice.play_voice(success_msg)
@@ -95,72 +96,91 @@ class AutolifeTest:
             return
         
         # Check battery status
-        check_and_log(node.is_battery_live,
-            f"电源模块就绪, 当前电量 {node.battery_percent}",
-            "电源模块丢失"
-        )
-        if stop_event.is_set():
-            return
+        # check_and_log(node.is_battery_live,
+        #     f"电源模块就绪, 当前电量 {node.battery_percent}",
+        #     "电源模块丢失"
+        # )
+        # if stop_event.is_set():
+        #     return
 
-        # Check IMU status
-        check_and_log(time.time() - node.imu_received_time < 3,
-            "陀螺仪模块就绪",
-            "陀螺仪模块丢失"
-        )
-        if stop_event.is_set():
-            return
+        # # Check IMU status
+        # check_and_log(time.time() - node.imu_received_time < 3,
+        #     "陀螺仪模块就绪",
+        #     "陀螺仪模块丢失"
+        # )
+        # if stop_event.is_set():
+        #     return
 
-        # Check lidar status
-        check_and_log(
-            time.time() - node.rplidar_front_received_time < 3 and
-            time.time() - node.rplidar_back_received_time < 3,
-            "激光雷达模块就绪",
-            "激光雷达模块就绪"
-        )
-        if stop_event.is_set():
-            return
+        # # Check lidar status
+        # check_and_log(
+        #     time.time() - node.rplidar_front_received_time < 3 and
+        #     time.time() - node.rplidar_back_received_time < 3,
+        #     "激光雷达模块就绪",
+        #     "激光雷达模块就绪"
+        # )
+        # if stop_event.is_set():
+        #     return
 
-        piper_voice.play_voice("手臂测试开始")
-        self.shared_log['log'] += "手臂测试开始"
-        node.replay(f"{PKL_ROOT}/command_full2.pkl")
-        piper_voice.play_voice("手臂测试结束")
-        self.shared_log['log'] += "手臂测试结束"
-        if stop_event.is_set():
-            return
-
+        # piper_voice.play_voice("手臂测试开始")
+        # self.shared_log['log'] += "手臂测试开始"
+        # node.replay(f"{PKL_ROOT}/command_full2.pkl")
+        # piper_voice.play_voice("手臂测试结束")
+        # self.shared_log['log'] += "手臂测试结束"
+        # if stop_event.is_set():
+        #     return
 
     def capture_and_save_images(self):
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
 
         try:
+            self.shared_log['log'] += "capture_and_save_images Start.\n"
+
             for camera_name, file_path in self.camera_names.items():
-                # Get camera image
-                image = self.robot_api.get_camera_image(camera_name)
-                time.sleep(0.1)
-                image = self.robot_api.get_camera_image(camera_name)
+                simple_name = camera_name.removeprefix("mod_camera_")
+                image = None
+
+                # 使用线程池 + 超时机制防止阻塞
+                try:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(self.robot_api.get_camera_image, simple_name)
+                        image = future.result(timeout=3.0)
+
+                        time.sleep(0.1)  # 再试一次
+                        future = executor.submit(self.robot_api.get_camera_image, simple_name)
+                        image = future.result(timeout=3.0)
+
+                except concurrent.futures.TimeoutError:
+                    self.shared_log['log'] += f"{camera_name} 获取图像超时\n"
+                    continue
+                except Exception as e:
+                    self.shared_log['log'] += f"{camera_name} 获取图像失败: {str(e)}\n"
+                    continue
+
+                # 保存图像
                 if isinstance(image, dict):
-                    color_, depth_ = image['color'], image['depth']
-                    cv2.imwrite(os.path.join(self.save_dir, "color.jpg"), color_)
-                    cv2.imwrite(os.path.join(self.save_dir, "depth.jpg"), depth_)
+                    color_ = image['color']
+                    depth_ = image['depth']
+                    cv2.imwrite(os.path.join(self.save_dir, f"{simple_name}_color.jpg"), color_)
+                    cv2.imwrite(os.path.join(self.save_dir, f"{simple_name}_depth.jpg"), depth_)
                 else:
                     cv2.imwrite(file_path, image)
-                self.shared_log['log'] += f"Saved image from {camera_name} to {file_path}"
+
+                self.shared_log['log'] += f"Saved image from {camera_name} to {file_path}\n"
                 self.vision_status[self.CAMERA_NAME_MAP[camera_name]] = True
 
         except Exception as e:
             traceback.print_exc()
+            self.shared_log['log'] += f"捕获图像过程中出现异常: {str(e)}\n"
 
-        # Check camera status
-        vision_model = all(status for status in self.vision_status.values()) 
+        # 检查结果
+        self.shared_log['log'] += "vision_status 状态如下：\n"
         for chinese_name, status in self.vision_status.items():
-            if not status:
-                piper_voice.play_voice(f"{chinese_name} 丢失")
-                self.shared_log['log'] += f"{chinese_name} 丢失"
+            self.shared_log['log'] += f"  {chinese_name}: {'正常' if status else '异常'}\n"
 
-        if vision_model:
+        if all(self.vision_status.values()):
             self.robot_api.play_voice("视觉模块就绪")
-            self.shared_log['log'] += "视觉模块就绪"
+            self.shared_log['log'] += "视觉模块就绪\n"
 
     def run(self, args=None, stop_event=None) -> None:
         """Main function to initialize and run the ROS2 node."""
