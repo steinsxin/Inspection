@@ -34,7 +34,7 @@ class AutolifeTest:
         "mod_camera_hand_right": "右手摄像头",
     }
 
-    def __init__(self, save_dir: str, shared_log: Dict):
+    def __init__(self, save_dir: str, shared_log: Dict, key_queue=None):
         self.model_config = self._load_json_config(MODEL_CONFIG_PATH)
         self.camera_model = self.model_config['camera']['ENABLED_MODULES']
         self.audio_model = self.model_config['audio']['ENABLED_MODULES']
@@ -73,6 +73,10 @@ class AutolifeTest:
             self.piper_voice.play_voice(failure_msg)
             self.shared_log['log'] += f"{failure_msg}\n"
 
+    def wait_and_check_stop(stop_event, seconds=1):
+        time.sleep(seconds)
+        return stop_event.is_set()
+
     def check_task(self, number: int, pub_node: PublisherNode, rev_node: ReceiverNode, stop_event=None) -> None:
         """Perform all hardware checks and voice announcements."""
         buffer = io.StringIO()
@@ -92,7 +96,7 @@ class AutolifeTest:
             self.shared_log['log'] += "No hardware initialization report found.\n"
 
         self.capture_and_save_images()
-        if stop_event.is_set():
+        if wait_and_check_stop(stop_event):
             return
         
         # Check battery status
@@ -100,7 +104,8 @@ class AutolifeTest:
             f"电源模块就绪, 当前电量 {rev_node.battery_percent}",
             "电源模块丢失"
         )
-        if stop_event.is_set():
+        time.sleep(1)
+        if wait_and_check_stop(stop_event):
             return
 
         # Check IMU status
@@ -108,7 +113,7 @@ class AutolifeTest:
             "陀螺仪模块就绪",
             "陀螺仪模块丢失"
         )
-        if stop_event.is_set():
+        if wait_and_check_stop(stop_event):
             return
 
         # Check lidar status
@@ -117,7 +122,7 @@ class AutolifeTest:
             "激光雷达模块就绪",
             "激光雷达模块丢失"
         )
-        if stop_event.is_set():
+        if wait_and_check_stop(stop_event):
             return
 
         self.piper_voice.play_voice("手臂测试开始")
@@ -125,7 +130,7 @@ class AutolifeTest:
         pub_node.replay(f"{PKL_ROOT}/command_full2.pkl")
         self.piper_voice.play_voice("手臂测试结束")
         self.shared_log['log'] += "手臂测试结束"
-        if stop_event.is_set():
+        if wait_and_check_stop(stop_event):
             return
 
     def capture_and_save_images(self):
@@ -180,6 +185,9 @@ class AutolifeTest:
         if all(self.vision_status.values()):
             self.piper_voice.play_voice("视觉模块就绪")
             self.shared_log['log'] += "视觉模块就绪\n"
+        else:
+            self.piper_voice.play_voice("视觉模块丢失")
+            self.shared_log['log'] += "视觉模块丢失\n"
 
     def run(self, args=None, stop_event=None) -> None:
         """Main function to initialize and run the ROS2 node."""
@@ -210,7 +218,11 @@ class AutolifeTest:
         
 def main(stop_event=None, key_queue=None, shared_log=None):
     try:
-        autolife_test = AutolifeTest(save_dir="camera_images", shared_log=shared_log)
+        autolife_test = AutolifeTest(
+            save_dir="camera_images", 
+            shared_log=shared_log, 
+            key_queue=key_queue
+        )
         autolife_test.run(stop_event=stop_event)
     except (KeyboardInterrupt, ExternalShutdownException):
         print("Quit by interrupt")
@@ -219,4 +231,5 @@ def main(stop_event=None, key_queue=None, shared_log=None):
         traceback.print_exc()
 
 if __name__ == "__main__":
-    main()
+    stop_event = threading.Event()
+    main(stop_event=stop_event)

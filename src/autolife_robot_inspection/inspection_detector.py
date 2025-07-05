@@ -70,17 +70,17 @@ class InspectionDetector:
 
                     shared_log["log"] = detector.get_log()
                     detector.run()
-        
+
             except Exception as e:
                 error_msg = f"Error during {DetectorClass.__name__} detection: {e}"
                 shared_log["log"] = error_msg
             finally:
                 shared_log["log"] = f"[{DetectorClass.__name__}] Detector stopped."
 
-        stop_event = stop_event or multiprocessing.Event()
+        process_stop_event = multiprocessing.Event()
         process = multiprocessing.Process(
             target=run_detector,
-            args=(shared_log, key_queue, stop_event)
+            args=(shared_log, key_queue, process_stop_event)
         )
         process.start()
 
@@ -94,17 +94,19 @@ class InspectionDetector:
                     self._log_screen.set_log(shared_log["log"])
 
                 try:
-                    key = input_q.get_nowait()
-                    key_queue.put(key)
+                    last_key_event = None
+                    while not input_q.empty():
+                        last_key_event = input_q.get_nowait()
+
+                    if last_key_event:
+                        key_queue.put(last_key_event)
                 except queue.Empty:
                     pass
 
-                time.sleep(0.1)
+                time.sleep(0.05)
 
         finally:
-            stop_event.set()  # 通知子进程退出
-            if process.is_alive():
-                process.terminate()
+            process_stop_event.set()  # 通知子进程退出
             process.join()
             
             if self._log_screen:
@@ -230,10 +232,10 @@ class InspectionDetector:
             finally:
                 shared_log["log"] += f"\n[{test_name}] Script stopped."
 
-        stop_event = stop_event or multiprocessing.Event()
+        process_stop_event = multiprocessing.Event()
         process = multiprocessing.Process(
             target=run_script,
-            args=(shared_log, key_queue, stop_event)
+            args=(shared_log, key_queue, process_stop_event)
         )
         process.start()
 
@@ -247,17 +249,19 @@ class InspectionDetector:
                     self._log_screen.set_log(shared_log["log"])
 
                 try:
-                    key = input_q.get_nowait()
-                    key_queue.put(key)
+                    last_key_event = None
+                    while not input_q.empty():
+                        last_key_event = input_q.get_nowait()
+
+                    if last_key_event:
+                        key_queue.put(last_key_event)
                 except queue.Empty:
                     pass
 
-                time.sleep(0.1)
+                time.sleep(0.05)
 
         finally:
-            stop_event.set()
-            if process.is_alive():
-                process.terminate()
+            process_stop_event.set()
             process.join()
 
             if self._log_screen:
@@ -313,16 +317,14 @@ class InspectionDetector:
 
     ########### IntegrationTest ###########
 
-    def AutolifeTest(self, stop_event=None):
-        self._run_integration_test("AutolifeTest", "autolife_robot_inspection.integration_test.autolife_test", stop_event)
+    def autolife_test(self, stop_event=None):
+        self._run_integration_test("autolife_test", "autolife_robot_inspection.integration_test.autolife_test", stop_event)
 
-    def Car_movement(self, stop_event=None):
-        self._run_integration_test("Car_movement", "autolife_robot_inspection.integration_test.car_movement", stop_event)
+    def car_movement(self, stop_event=None):
+        self._run_integration_test("car_movement", "autolife_robot_inspection.integration_test.car_movement", stop_event)
 
-    def Welcome_guests(self):
-        time.sleep(1)
-        if self.ui_callback:
-            self.ui_callback("Welcome_guests over")
+    def joint_control(self, stop_event=None):
+        self._run_integration_test("joint_control", "autolife_robot_inspection.integration_test.joint_control", stop_event)
 
     ########### OtherFunctions ###########
     def robot_arm_start(self):

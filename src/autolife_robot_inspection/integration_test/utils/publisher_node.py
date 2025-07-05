@@ -47,6 +47,11 @@ class PublisherNode(Node):
             f'robot_target_ee_pose{DEVICE_ID}',
             10
         )
+        self.gv_target_cmd_vel_pub = self.create_publisher(
+            String, 
+            f'gv_target_cmd_vel_{DEVICE_ID}',
+            10
+        )
 
     def load_pickle(self, filepath: str) -> List[Tuple[float, str]]:
         """Load message data from a pickle file.

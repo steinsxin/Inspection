@@ -22,8 +22,9 @@
         "1. Hardware Info"
       ],
       "IntegrationTest": [
-        "1. Autolifetest",
-        "2. Car_movement"
+        "1. autolife_test",
+        "2. car_movement",
+        "3. joint_control"
       ],
       "NetworkTest": [
         "1. Internal network test",
@@ -58,8 +59,9 @@
         "1. 硬件信息"
       ],
       "IntegrationTest": [
-        "1. Autolifetest",
-        "2. Car_movement"
+        "1. autolife_test",
+        "2. car_movement",
+        "3. joint_control"
       ],
       "NetworkTest": [
         "1. 内网测试",
@@ -83,9 +85,9 @@
       "1": {"function": "hardware_info"}
     },
     "IntegrationTest": {
-      "1": {"function": "AutolifeTest"},
-      "2": {"function": "Car_movement"},
-      "3": {"function": "Welcome_guests"}
+      "1": {"function": "autolife_test"},
+      "2": {"function": "car_movement"},
+      "3": {"function": "joint_control"}
     },
     "NetworkTest": {
       "1": {"function": "internal_network_test"},

@@ -108,7 +108,7 @@ class InspectionUI(App):
     CSS_PATH = UI_CSS_PATH
     BINDINGS = [
         ("escape", "quit", "Exit"),
-        ("w", "switch_language", "Switch Language"),
+        ("p", "switch_language", "Switch Language"),
         ("b", "go_back", "Back to Main"),
     ]
 
