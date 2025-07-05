@@ -9,6 +9,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+from geometry_msgs.msg import Twist
 from autolife_robot_inspection.integration_test.utils import PublisherNode
 
 
@@ -24,7 +25,7 @@ class CarMovement:
 
         # Max acceleration limits
         self.max_linear_acc = 0.2        # m/s^2
-        self.max_angular_acc = 1.6       # rad/s^2
+        self.max_angular_acc = 0.8       # rad/s^2
 
         # Target velocity for smoothing
         self._target_linear_x = 0.0
@@ -37,8 +38,7 @@ class CarMovement:
 
     def keyboard_input_task(self, stop_event=None):
         """Keyboard listener thread that updates target velocity."""
-        self.shared_log['log'] += "Keyboard input thread started\n"
-
+        self.shared_log['log'] += f"Keyboard input thread started\n"
         while not stop_event.is_set():
             now = time.time()
 
@@ -62,24 +62,25 @@ class CarMovement:
 
     def gv_task(self, pub_node: PublisherNode, stop_event=None):
         """Publisher thread that continuously sends velocity commands."""
-        self.shared_log['log'] += "Velocity publisher thread started\n"
+        set_parameter = pub_node.set_enable_gv_cmd_vel()
+
+        self.shared_log['log'] += f"Velocity publisher thread started\n"
+        self.shared_log['log'] += f"set_gv_cmd_vel_parameter: {set_parameter}\n"
 
         while not stop_event.is_set():
-            cmd = (
-                self._target_linear_x,
-                self._target_linear_y,
-                self._target_angular_z,
-            )
-            pub_node.gv_target_cmd_vel_pub.publish(
-                String(data=json.dumps({"cmd": cmd}))
-            )
-            time.sleep(0.1)
+            twist_msg = Twist()
+            twist_msg.linear.x = self._target_linear_x
+            twist_msg.linear.y = self._target_linear_y
+            twist_msg.angular.z = self._target_angular_z
+            pub_node.gv_target_cmd_vel_pub.publish(twist_msg)
+            time.sleep(0.05)
 
         # Return speed to 0 before exiting
-        cmd = (0, 0, 0)
-        pub_node.gv_target_cmd_vel_pub.publish(
-            String(data=json.dumps({"cmd": cmd}))
-        )
+        twist_msg = Twist()
+        twist_msg.linear.x = 0
+        twist_msg.linear.y = 0
+        twist_msg.angular.z = 0
+        pub_node.gv_target_cmd_vel_pub.publish(twist_msg)
         time.sleep(0.1)
 
     def convert_key_to_velocity(self, key: str) -> Tuple[float, float, float]:
@@ -109,10 +110,14 @@ class CarMovement:
         """Smooth velocity changes by applying acceleration limits."""
         linear_x, linear_y, angular_z = desired
 
+        now = time.time()
         if self._previous_timestamp > 0.0:
-            dt = time.time() - self._previous_timestamp
+            dt = now - self._previous_timestamp
+            dt = max(min(dt, 0.1), 0.01)  # Clamp dt to [0.01, 0.1]
         else:
             dt = 0.01  # First frame
+        
+        self._previous_timestamp = now
 
         max_dv = self.max_linear_acc * dt
         max_dw = self.max_angular_acc * dt
@@ -121,19 +126,17 @@ class CarMovement:
         dvy = linear_y - self._target_linear_y
         dwz = angular_z - self._target_angular_z
 
-        if abs(dvx) > max_dv:
-            linear_x = self._target_linear_x + np.sign(dvx) * max_dv
-        if abs(dvy) > max_dv:
-            linear_y = self._target_linear_y + np.sign(dvy) * max_dv
-        if abs(dwz) > max_dw:
-            angular_z = self._target_angular_z + np.sign(dwz) * max_dw
+        # Apply acceleration limits using clip
+        linear_x = self._target_linear_x + np.clip(dvx, -max_dv, max_dv)
+        linear_y = self._target_linear_y + np.clip(dvy, -max_dv, max_dv)
+        angular_z = self._target_angular_z + np.clip(dwz, -max_dw, max_dw)
 
         self._target_linear_x = round(linear_x, 4)
         self._target_linear_y = round(linear_y, 4)
         self._target_angular_z = round(angular_z, 4)
-        self._previous_timestamp = time.time()
 
         return self._target_linear_x, self._target_linear_y, self._target_angular_z
+
 
     def run(self, args=None, stop_event=None):
         """Initialize and run ROS2 node with keyboard and velocity threads."""

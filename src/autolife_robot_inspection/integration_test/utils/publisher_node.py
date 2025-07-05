@@ -10,6 +10,9 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
+from geometry_msgs.msg import Twist
+from rcl_interfaces.srv import SetParameters
+from rclpy.parameter import Parameter
 
 from autolife_robot_sdk.utils import get_wifi_mac_address, get_mac_from_ip
 
@@ -48,10 +51,40 @@ class PublisherNode(Node):
             10
         )
         self.gv_target_cmd_vel_pub = self.create_publisher(
-            String, 
+            Twist, 
             f'gv_target_cmd_vel_{DEVICE_ID}',
             10
         )
+
+    def set_enable_gv_cmd_vel(self):
+        return self.set_remote_parameter_once(
+            f'arm_service_move_{DEVICE_ID}', 
+            'enable_gv_target_cmd_vel', 
+            False
+        )
+
+    def set_remote_parameter_once(self, target_node_name: str, param_name: str, param_value: bool) -> bool:
+        """仅尝试一次设置远程参数，不阻塞等待"""
+        client = self.create_client(SetParameters, f'/{target_node_name}/set_parameters')
+
+        if not client.service_is_ready():
+            return False
+
+        param = Parameter(param_name, Parameter.Type.BOOL, param_value)
+        request = SetParameters.Request()
+        request.parameters = [param.to_parameter_msg()]
+
+        future = client.call_async(request)
+
+        def callback(fut):
+            try:
+                result = fut.result()
+            except Exception as e:
+                print(f"Exception in callback: {e}")
+
+        future.add_done_callback(callback)
+        return True
+
 
     def load_pickle(self, filepath: str) -> List[Tuple[float, str]]:
         """Load message data from a pickle file.
